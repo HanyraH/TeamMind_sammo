@@ -1,4 +1,5 @@
 import React from 'react';
+import clsx from 'clsx';
 import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -47,16 +48,17 @@ export const Sidebar: React.FC = () => {
           const Icon = item.icon;
           return (
             <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) =>
-                `flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-                  isActive
-                    ? 'bg-blue-600/15 text-brand-sky border border-blue-500/30 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'
-                }`
+            to='/constructor'
+            className={({ isActive }) =>
+              clsx(
+                'flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                isActive
+                ? 'bg-indigo-600 text-white'
+                : 'text-slate-300 hover:bg-slate-800'
+              )
               }
             >
+
               <div className="flex items-center gap-3">
                 <Icon className="w-4 h-4 shrink-0" />
                 <span>{item.label}</span>
