@@ -1,4 +1,5 @@
-<<<<<<< Dikiyarbuzz
+
+
 # Python
 __pycache__/
 *.py[cod]
@@ -60,6 +61,8 @@ htmlcov/
 .pytest_cache/
 test-results/
 playwright-report/
+
+=======
 =======
 node_modules
->>>>>>> main
+
