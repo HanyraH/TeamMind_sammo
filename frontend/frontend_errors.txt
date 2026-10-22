@@ -1,0 +1,47 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+Dashboard.tsx:29
+ Failed to load dashboard data: AxiosError: Request failed with status code 404
+    at async getDashboardKpi (client.ts:297:20)
+    at async Promise.all (index 0)
+    at async loadDashboard (Dashboard.tsx:20:39)
+
+
+Failed to initialize projects: AxiosError: Request failed with status code 500
+    at async getProjects (client.ts:159:20)
+    at async loadProjectsAndMatch (TeamConstructor.tsx:42:23)
+
+
+Error running team matching: AxiosError: Request failed with status code 404
+    at async runTeamMatch (client.ts:244:20)
+    at async executeMatch (TeamConstructor.tsx:66:20)
+    at async loadProjectsAndMatch (TeamConstructor.tsx:50:7)
+(anonymous)	@	TeamConstructor.tsx:83
+await in (anonymous)		
+(anonymous)	@	TeamConstructor.tsx:50
+await in (anonymous)		
+(anonymous)	@	TeamConstructor.tsx:37
+
+
+TeamConstructor.tsx:83 Error running team matching: AxiosError: Request failed with status code 404
+    at settle (settle.js:19:12)
+    at XMLHttpRequest.onloadend (xhr.js:109:9)
+    at Axios.request (Axios.js:48:43)
+    at async runTeamMatch (client.ts:244:20)
+    at async executeMatch (TeamConstructor.tsx:66:20)
+    at async loadProjectsAndMatch (TeamConstructor.tsx:50:7)
+
+
+Failed to initialize projects: AxiosError: Request failed with status code 500
+    at settle (settle.js:19:12)
+    at XMLHttpRequest.onloadend (xhr.js:109:9)
+    at Axios.request (Axios.js:48:43)
+    at async getProjects (client.ts:159:20)
+    at async loadProjectsAndMatch (TeamConstructor.tsx:42:23)
+
+
+TeamConstructor.tsx:48 Failed to initialize projects: AxiosError: Request failed with status code 500
+    at settle (settle.js:19:12)
+    at XMLHttpRequest.onloadend (xhr.js:109:9)
+    at Axios.request (Axios.js:48:43)
+    at async getProjects (client.ts:159:20)
+    at async loadProjectsAndMatch (TeamConstructor.tsx:42:23)
