@@ -97,7 +97,7 @@ export const GanttChart: React.FC = () => {
       id: '6', 
       name: 'E2E интеграционные тесты (Playwright) и нагрузка (Locust)', 
       projectName: 'Интеграционный шлюз 1С:ЗУП',
-      assignee: 'Олег Морозов', 
+      assignee: 'Олег Морозов (Олег)', 
       progress: 40, 
       startCol: 5, 
       span: 3, 

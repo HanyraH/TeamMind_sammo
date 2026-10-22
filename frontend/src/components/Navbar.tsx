@@ -1,19 +1,87 @@
-import React from 'react';
-import { Search, Bell, Plus, Moon, Sparkles, Globe } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Search, Bell, Plus, Globe, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface NavbarProps {
   title?: string;
 }
 
+interface NotificationItem {
+  id: string;
+  title: string;
+  description: string;
+  time: string;
+  type: 'warning' | 'success' | 'info';
+  unread: boolean;
+}
+
+const initialNotifications: NotificationItem[] = [
+  {
+    id: 'n1',
+    title: 'Перегрузка отдела Backend Core',
+    description: 'Средняя загрузка 82% — превышает порог 80%. Требуется разгрузка.',
+    time: '5 мин назад',
+    type: 'warning',
+    unread: true,
+  },
+  {
+    id: 'n2',
+    title: 'Заявка на отпуск',
+    description: 'Дмитрий Соколов: 19.10.2026 — 27.10.2026 (Основной отпуск).',
+    time: '42 мин назад',
+    type: 'info',
+    unread: true,
+  },
+  {
+    id: 'n3',
+    title: 'Спринт завершён успешно',
+    description: 'Команда «ФинТех Платформа Core» закрыла 11 из 12 задач.',
+    time: '2 ч назад',
+    type: 'success',
+    unread: false,
+  },
+];
+
 export const Navbar: React.FC<NavbarProps> = ({ title = 'Панель управления' }) => {
+  const navigate = useNavigate();
+
+  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const unreadCount = notifications.filter((n) => n.unread).length;
+
+  // Клик вне панели — закрыть
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setIsNotifOpen(false);
+      }
+    };
+    if (isNotifOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isNotifOpen]);
+
+  const handleNewProject = () => {
+    navigate('/projects');
+  };
+
+  const handleMarkAllRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
+  };
+
+  const iconByType = (type: NotificationItem['type']) => {
+    if (type === 'warning') return <AlertTriangle className="w-4 h-4 text-amber-400" />;
+    if (type === 'success') return <CheckCircle2 className="w-4 h-4 text-emerald-400" />;
+    return <Clock className="w-4 h-4 text-brand-sky" />;
+  };
+
   return (
     <header className="h-16 bg-[#0B1120]/80 backdrop-blur-md border-b border-slate-800/80 px-8 flex items-center justify-between sticky top-0 z-30">
-      {/* Page Title & Breadcrumbs */}
       <div>
         <h1 className="text-lg font-semibold text-white tracking-tight">{title}</h1>
       </div>
 
-      {/* Center Search Bar */}
       <div className="relative w-96 hidden md:block">
         <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
         <input
@@ -26,22 +94,100 @@ export const Navbar: React.FC<NavbarProps> = ({ title = 'Панель управ
         </kbd>
       </div>
 
-      {/* Right Controls */}
       <div className="flex items-center gap-3">
-        <button className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium shadow-sm transition-colors">
+        {/* Новый проект */}
+        <button
+          onClick={handleNewProject}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium shadow-sm transition-colors"
+        >
           <Plus className="w-3.5 h-3.5" />
           <span>Новый проект</span>
         </button>
 
         <div className="h-5 w-px bg-slate-800 mx-1"></div>
 
-        {/* Notifications */}
-        <button className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors">
-          <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-500 ring-2 ring-[#0B1120]"></span>
-        </button>
+        {/* Уведомления */}
+        <div className="relative" ref={notifRef}>
+          <button
+            onClick={() => setIsNotifOpen((v) => !v)}
+            className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors"
+            aria-label="Уведомления"
+          >
+            <Bell className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-[#0B1120]">
+                {unreadCount}
+              </span>
+            )}
+          </button>
 
-        {/* Language selector */}
+          {isNotifOpen && (
+            <div className="absolute right-0 top-12 w-96 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-50">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-white">Уведомления</div>
+                  <div className="text-[11px] text-slate-400">
+                    {unreadCount > 0 ? `Непрочитанных: ${unreadCount}` : 'Все прочитаны'}
+                  </div>
+                </div>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllRead}
+                    className="text-[11px] text-brand-sky hover:underline font-medium"
+                  >
+                    Прочитать все
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-96 overflow-y-auto divide-y divide-slate-800/70">
+                {notifications.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">
+                    Уведомлений нет
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className={`p-3 flex items-start gap-3 hover:bg-slate-800/40 transition-colors ${
+                        n.unread ? 'bg-blue-500/5' : ''
+                      }`}
+                    >
+                      <div className="p-1.5 rounded-lg bg-slate-800/80 shrink-0 mt-0.5">
+                        {iconByType(n.type)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="text-xs font-semibold text-white leading-tight">
+                            {n.title}
+                          </div>
+                          {n.unread && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 mt-1" />
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-1 leading-snug">
+                          {n.description}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1">{n.time}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="p-2 border-t border-slate-800 bg-slate-950/40 text-center">
+                <button
+                  onClick={() => setIsNotifOpen(false)}
+                  className="text-[11px] text-slate-400 hover:text-white font-medium py-1 px-3 rounded-lg hover:bg-slate-800/60 transition-colors"
+                >
+                  Закрыть
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Язык — НЕ ТРОГАЕМ */}
         <button className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-white px-2 py-1.5 rounded-lg hover:bg-slate-800/60 transition-colors">
           <Globe className="w-3.5 h-3.5" />
           <span>RU</span>

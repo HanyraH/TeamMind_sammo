@@ -35,7 +35,7 @@ export const Sidebar: React.FC = () => {
         </div>
         <div>
           <span className="font-bold text-lg tracking-wide text-white">Team<span className="text-brand-sky">Mind</span></span>
-          <div className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">Resource AI Core</div>
+          <div className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">AI-Powered Team Builder</div>
         </div>
       </div>
 
