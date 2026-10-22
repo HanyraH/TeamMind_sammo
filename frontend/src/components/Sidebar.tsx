@@ -48,7 +48,9 @@ export const Sidebar: React.FC = () => {
           const Icon = item.icon;
           return (
             <NavLink
-            to='/constructor'
+            key={item.path}
+            to={item.path}
+            end={item.path === '/'}
             className={({ isActive }) =>
               clsx(
                 'flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors',

@@ -143,7 +143,7 @@ export const Dashboard: React.FC = () => {
                 <Clock className="w-4 h-4 text-brand-sky" />
                 Ближайшие отсутствия
               </h3>
-              <Link to="/absences" className="text-xs text-brand-sky hover:underline">Все (16)</Link>
+              <Link to="/calendar" className="text-xs text-brand-sky hover:underline">Все (16)</Link>
             </div>
 
             <div className="space-y-3">
