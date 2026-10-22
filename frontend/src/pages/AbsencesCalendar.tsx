@@ -25,22 +25,30 @@ const absenceTypes = [
   { id: 'OTHER', name: 'Иное отсутствие', color: '#94A3B8' },
 ];
 
+const toDateString = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const parseLocalDate = (value: string) => { const [year, month, day] = value.slice(0, 10).split('-').map(Number); return new Date(year, month - 1, day); };
+
 export const AbsencesCalendar: React.FC = () => {
   const [events, setEvents] = useState<AbsenceEvent[]>([]);
   const [employees, setEmployees] = useState<EmployeeItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [currentMonth] = useState('Октябрь 2026');
-
-  // Currently selected date for the side panel inspection
-  const [selectedDay, setSelectedDay] = useState<number>(20);
-  const selectedDateStr = `2026-10-${String(selectedDay).padStart(2, '0')}`;
+  // Календарь всегда открывается на текущем месяце и текущей дате.
+  const today = new Date();
+  const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDateStr, setSelectedDateStr] = useState(() => toDateString(new Date()));
+  const selectedDate = parseLocalDate(selectedDateStr);
+  const selectedDay = selectedDate.getDate();
+  const currentMonth = visibleMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+  const daysInMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0).getDate();
+  const firstWeekdayOffset = (new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1).getDay() + 6) % 7;
+  const isSameMonth = selectedDate.getFullYear() === visibleMonth.getFullYear() && selectedDate.getMonth() === visibleMonth.getMonth();
 
   // Submit Modal state
   const [isSubmitOpen, setIsSubmitOpen] = useState(false);
   const [selectedEmpId, setSelectedEmpId] = useState('');
   const [absenceType, setAbsenceType] = useState('ANNUAL');
-  const [startDate, setStartDate] = useState(selectedDateStr);
-  const [endDate, setEndDate] = useState('2026-10-27');
+  const [startDate, setStartDate] = useState(() => toDateString(new Date()));
+  const [endDate, setEndDate] = useState(() => { const date = new Date(); date.setDate(date.getDate() + 7); return toDateString(date); });
   const [reason, setReason] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
@@ -145,19 +153,19 @@ export const AbsencesCalendar: React.FC = () => {
 
         <div className="flex items-center gap-2 w-full md:w-auto justify-end">
           <button 
-            onClick={() => setSelectedDay(Math.max(1, selectedDay - 1))}
+            onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))}
             className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button 
-            onClick={() => setSelectedDay(19)}
+            onClick={() => { const now = new Date(); setVisibleMonth(new Date(now.getFullYear(), now.getMonth(), 1)); setSelectedDateStr(toDateString(now)); }}
             className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-semibold text-white transition-colors"
           >
-            Сегодня (19 окт)
+            Сегодня
           </button>
           <button 
-            onClick={() => setSelectedDay(Math.min(31, selectedDay + 1))}
+            onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}
             className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
           >
             <ChevronRight className="w-4 h-4" />
@@ -190,9 +198,10 @@ export const AbsencesCalendar: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-7 gap-2">
-              {Array.from({ length: 31 }).map((_, i) => {
-                const day = i + 1;
-                const dateStr = `2026-10-${String(day).padStart(2, '0')}`;
+              {Array.from({ length: firstWeekdayOffset + daysInMonth }).map((_, i) => {
+                if (i < firstWeekdayOffset) return <div key={`empty-${i}`} aria-hidden="true" />;
+                const day = i - firstWeekdayOffset + 1;
+                const dateStr = toDateString(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), day));
                 
                 // Absences on this date
                 const dayEvents = events.filter(e => {
@@ -201,13 +210,14 @@ export const AbsencesCalendar: React.FC = () => {
                   return dateStr >= s && dateStr <= end;
                 });
 
-                const isSelected = selectedDay === day;
-                const isToday = day === 19;
+                const isSelected = selectedDateStr === dateStr;
+                const now = new Date();
+                const isToday = now.getFullYear() === visibleMonth.getFullYear() && now.getMonth() === visibleMonth.getMonth() && day === now.getDate();
 
                 return (
                   <button
                     key={day}
-                    onClick={() => setSelectedDay(day)}
+                    onClick={() => setSelectedDateStr(dateStr)}
                     className={`h-20 p-2 rounded-xl border flex flex-col justify-between text-left transition-all relative ${
                       isSelected
                         ? 'bg-blue-600/20 border-blue-500 shadow-lg ring-2 ring-blue-500/50 scale-[1.02] z-10'
@@ -275,7 +285,7 @@ export const AbsencesCalendar: React.FC = () => {
           <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-slate-300">
               <Sparkles className="w-3.5 h-3.5 text-brand-sky" />
-              Выбран день: <strong className="text-white">{selectedDay} октября 2026</strong>
+              Выбран день: <strong className="text-white">{selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
             </span>
             <span className="font-mono text-brand-sky">
               {absentOnSelectedDay.length > 0 ? `${absentOnSelectedDay.length} отсутствующих` : 'Все работают'}
@@ -294,7 +304,7 @@ export const AbsencesCalendar: React.FC = () => {
                 </span>
                 <h3 className="text-lg font-bold text-white mt-0.5 flex items-center gap-2">
                   <CalendarIcon className="w-4 h-4 text-brand-sky" />
-                  <span>{selectedDay} октября 2026</span>
+                  <span>{selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
                 </h3>
               </div>
               <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
@@ -316,7 +326,7 @@ export const AbsencesCalendar: React.FC = () => {
                   <div>
                     <div className="text-sm font-semibold text-white">Все сотрудники на рабочем месте</div>
                     <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                      На {selectedDay} октября 2026 года нет оформленных отпусков, больничных или командировок. Доступность ресурсов составляет 100%.
+                      На {selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })} нет оформленных отпусков, больничных или командировок. Доступность ресурсов составляет 100%.
                     </p>
                   </div>
                   <button
