@@ -265,3 +265,30 @@ class WhatIfSimulationView(APIView):
         )
 
         return Response(result)
+
+
+class TeamRiskAssessmentView(APIView):
+    """
+    Комплексная оценка рисков, Bus Factor и устойчивости команды (ТЗ §6.8).
+    Принимает текущий состав команды и требования к ролям проекта.
+    Возвращает Resilience Score, Single Point of Failure (SPOF) и рекомендации.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        team = request.data.get('team', [])
+        role_requirements = request.data.get('role_requirements')
+        project_id = request.data.get('project_id')
+
+        if project_id and not role_requirements:
+            try:
+                project = Project.objects.filter(id=uuid.UUID(str(project_id)), is_deleted=False).first()
+            except Exception:
+                project = Project.objects.filter(code=str(project_id), is_deleted=False).first()
+            if project:
+                role_requirements = _get_project_role_requirements(project)
+
+        engine = TeamMatchingEngine()
+        risks = engine.analyze_team_risks(team=team, role_requirements=role_requirements)
+        return Response(risks)
+

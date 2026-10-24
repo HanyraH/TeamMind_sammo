@@ -316,6 +316,157 @@ class TeamMatchingEngine:
 
         return enriched_team
 
+    def analyze_team_risks(
+        self,
+        team: List[Dict[str, Any]],
+        role_requirements: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Комплексный анализ рисков команды (ТЗ §6.8):
+        1. Анализ Bus Factor (уязвимость к потере ключевого носителя навыка / Single Point of Failure).
+        2. Индекс выгорания (Burnout Risk) и дисбаланс нагрузки.
+        3. Коэффициент устойчивости команды (Resilience Score, 0..100).
+        4. Автоматические рекомендации по кросс-обучению и менторству.
+        """
+        if not team:
+            return {
+                "resilience_score": 0.0,
+                "overall_risk_level": "HIGH",
+                "bus_factor": 0,
+                "critical_skills_at_risk": [],
+                "burnout_risk": {"risk_level": "LOW", "high_load_members": []},
+                "recommendations": ["Команда пуста. Требуется назначение участников."]
+            }
+
+        # 1. Bus Factor Analysis (Single Point of Failure)
+        req_skills_map: Dict[str, int] = {}
+        if role_requirements:
+            for req in role_requirements:
+                for skill_name, min_lvl in req.get('required_skills', {}).items():
+                    req_skills_map[skill_name] = max(req_skills_map.get(skill_name, 0), int(min_lvl))
+
+        # Карта навыков участников команды
+        skill_coverage: Dict[str, List[Dict[str, Any]]] = {}
+        for member in team:
+            m_skills = member.get('skills_dict', {})
+            for s_name, s_lvl in m_skills.items():
+                if s_name not in skill_coverage:
+                    skill_coverage[s_name] = []
+                skill_coverage[s_name].append({
+                    "id": member.get('id'),
+                    "name": member.get('name', f"Employee #{member.get('id')}"),
+                    "level": int(s_lvl)
+                })
+
+        critical_skills_at_risk = []
+        min_bus_factor = 999
+        skills_to_check = req_skills_map if req_skills_map else {s: 3 for s in skill_coverage.keys()}
+
+        for s_name, min_lvl in skills_to_check.items():
+            capable_members = [
+                m for m in skill_coverage.get(s_name, [])
+                if m["level"] >= min_lvl
+            ]
+            carriers_count = len(capable_members)
+            min_bus_factor = min(min_bus_factor, carriers_count)
+
+            if carriers_count == 0:
+                critical_skills_at_risk.append({
+                    "skill": s_name,
+                    "bus_factor": 0,
+                    "status": "UNCOVERED",
+                    "description": f"Навык '{s_name}' (требуемый уровень {min_lvl}) не закрыт ни одним участником!"
+                })
+            elif carriers_count == 1:
+                critical_skills_at_risk.append({
+                    "skill": s_name,
+                    "bus_factor": 1,
+                    "status": "CRITICAL_SPOF",
+                    "sole_carrier": capable_members[0]["name"],
+                    "sole_carrier_level": capable_members[0]["level"],
+                    "description": f"Уязвимость Bus Factor = 1: только {capable_members[0]['name']} владеет навыком '{s_name}' на уровне {capable_members[0]['level']}."
+                })
+
+        if min_bus_factor == 999:
+            min_bus_factor = 1
+
+        # 2. Burnout Risk & Load Imbalance
+        high_load_members = []
+        total_loads = []
+        for member in team:
+            b_down = member.get('score_breakdown', {})
+            proj_load = b_down.get('projected_load', float(member.get('current_load_percent', 50.0)))
+            total_loads.append(proj_load)
+            m_name = member.get('name', f"Employee #{member.get('id')}")
+            if proj_load >= 90.0:
+                high_load_members.append({
+                    "name": m_name,
+                    "load_percent": proj_load,
+                    "severity": "CRITICAL"
+                })
+            elif proj_load >= 80.0:
+                high_load_members.append({
+                    "name": m_name,
+                    "load_percent": proj_load,
+                    "severity": "ELEVATED"
+                })
+
+        avg_load = sum(total_loads) / len(total_loads) if total_loads else 0.0
+        load_variance = sum((x - avg_load) ** 2 for x in total_loads) / len(total_loads) if total_loads else 0.0
+        load_std_dev = load_variance ** 0.5
+
+        # 3. Resilience Score (0..100)
+        resilience = 100.0
+        uncovered_cnt = sum(1 for s in critical_skills_at_risk if s.get('status') == 'UNCOVERED')
+        spof_cnt = sum(1 for s in critical_skills_at_risk if s.get('status') == 'CRITICAL_SPOF')
+        resilience -= uncovered_cnt * 30.0
+        resilience -= spof_cnt * 12.0
+
+        for h in high_load_members:
+            if h["severity"] == "CRITICAL":
+                resilience -= 15.0
+            else:
+                resilience -= 5.0
+
+        if load_std_dev > 25.0:
+            resilience -= 10.0
+
+        resilience = round(max(0.0, min(100.0, resilience)), 1)
+
+        if resilience >= 80.0:
+            overall_risk = "LOW"
+        elif resilience >= 60.0:
+            overall_risk = "MEDIUM"
+        elif resilience >= 40.0:
+            overall_risk = "HIGH"
+        else:
+            overall_risk = "CRITICAL"
+
+        # 4. Рекомендации по оптимизации
+        recommendations = []
+        if uncovered_cnt > 0:
+            recommendations.append(f"Критично: добавьте в команду носителей {uncovered_cnt} недостающих навыков.")
+        if spof_cnt > 0:
+            recommendations.append(f"Риск потери кадров (Bus Factor=1) по {spof_cnt} компетенциям. Организуйте кросс-ревью и парное менторство.")
+        if any(h["severity"] == "CRITICAL" for h in high_load_members):
+            recommendations.append("Обнаружен риск выгорания: перераспределите задачи со сверхзагруженных сотрудников (>90%).")
+        if not recommendations:
+            recommendations.append("Команда сбалансирована, риски концентрации компетенций и перегрузок минимальны.")
+
+        return {
+            "resilience_score": resilience,
+            "overall_risk_level": overall_risk,
+            "bus_factor": min_bus_factor,
+            "critical_skills_at_risk": critical_skills_at_risk,
+            "burnout_risk": {
+                "risk_level": "HIGH" if any(h["severity"] == "CRITICAL" for h in high_load_members) else ("MEDIUM" if high_load_members else "LOW"),
+                "avg_load_percent": round(avg_load, 1),
+                "load_std_dev": round(load_std_dev, 1),
+                "high_load_members": high_load_members
+            },
+            "recommendations": recommendations
+        }
+
     def generate_all_variants(
         self,
         candidates: List[Dict[str, Any]],
@@ -388,12 +539,8 @@ class TeamMatchingEngine:
             avg_avail = round(sum(m.get('score_breakdown', {}).get('a_score', 90.0) for m in members) / len(members), 1)
             avg_load = round(sum(m.get('score_breakdown', {}).get('projected_load', 75.0) for m in members) / len(members), 1)
 
-            # Оценка рисков по ТЗ §6.8
-            risk = "LOW"
-            if avg_load > 85.0 or avg_skills < 75.0:
-                risk = "HIGH"
-            elif avg_load > 80.0 or avg_skills < 85.0:
-                risk = "MEDIUM"
+            # Комплексный анализ рисков и устойчивости команды (Bus Factor & Burnout)
+            risk_analysis = self.analyze_team_risks(members, role_requirements)
 
             variants.append({
                 "variant_id": st["id"],
@@ -403,9 +550,12 @@ class TeamMatchingEngine:
                 "skills_coverage": avg_skills,
                 "avg_availability": avg_avail,
                 "avg_load": avg_load,
-                "risk_level": risk,
+                "risk_level": risk_analysis["overall_risk_level"],
+                "resilience_score": risk_analysis["resilience_score"],
+                "bus_factor": risk_analysis["bus_factor"],
+                "risk_details": risk_analysis,
                 "members": members,
-                "explanation": f"Вариант сформирован по стратегии '{st['name']}'. Покрытие навыков: {avg_skills}%, средняя планируемая загрузка: {avg_load}%. Риск перегрузок: {risk}."
+                "explanation": f"Вариант сформирован по стратегии '{st['name']}'. Покрытие навыков: {avg_skills}%, средняя планируемая загрузка: {avg_load}%. Устойчивость команды: {risk_analysis['resilience_score']}% (Bus Factor = {risk_analysis['bus_factor']})."
             })
 
         return variants
@@ -448,11 +598,15 @@ class TeamMatchingEngine:
         # Покрытие навыков
         new_k_avg = round(sum(m.get('score_breakdown', {}).get('k_score', 85.0) for m in filtered_team) / max(1, len(filtered_team)), 1)
         
-        risk = "Низкий риск: ключевые роли закрыты сбалансированно"
-        if new_k_avg < 75.0:
-            risk = "Повышенный риск: нехватка покрытия ключевых навыков"
+        # Комплексный анализ рисков и Bus Factor для обновленного состава
+        risk_data = self.analyze_team_risks(filtered_team)
+        risk = f"Устойчивость: {risk_data['resilience_score']}%, Bus-Factor: {risk_data['bus_factor']} ({risk_data['overall_risk_level']})"
+        if risk_data['critical_skills_at_risk']:
+            risk += f" | {risk_data['critical_skills_at_risk'][0]['description']}"
         elif delta < -5.0:
-            risk = "Умеренный риск: интегральный скор команды снизился"
+            risk += " | Умеренный риск: интегральный скор снизился"
+        elif new_k_avg >= 85.0 and delta >= 0:
+            risk += " | Отличная замена: компетенции команды сбалансированы"
 
         return {
             "updated_team": filtered_team,
@@ -460,6 +614,9 @@ class TeamMatchingEngine:
             "skills_coverage": new_k_avg,
             "delta": delta,
             "risk_assessment": risk,
+            "resilience_score": risk_data["resilience_score"],
+            "bus_factor": risk_data["bus_factor"],
+            "risk_details": risk_data,
             "replaced_member": old_member,
             "new_member": updated_member
         }

@@ -86,7 +86,39 @@ class TeamMatchingEngineTestCase(TestCase):
         self.assertIn('overall_match_score', result)
         self.assertIn('delta', result)
         self.assertIn('risk_assessment', result)
+        self.assertIn('resilience_score', result)
+        self.assertIn('bus_factor', result)
         self.assertEqual(len(result['updated_team']), 2)
+
+    def test_analyze_team_risks_and_bus_factor(self):
+        team = [
+            {'id': '1', 'name': 'Lead Dev', 'current_load_percent': 95.0, 'skills_dict': {'Python': 5, 'System Design': 5}},
+            {'id': '2', 'name': 'Junior Dev', 'current_load_percent': 30.0, 'skills_dict': {'Python': 2}},
+        ]
+        project_roles = [
+            {'role_title': 'Lead', 'required_skills': {'System Design': 4, 'Python': 4}},
+            {'role_title': 'Security', 'required_skills': {'CyberSecurity': 3}}
+        ]
+        analysis = self.engine.analyze_team_risks(team, project_roles)
+        self.assertIn('resilience_score', analysis)
+        self.assertIn('bus_factor', analysis)
+        self.assertIn('critical_skills_at_risk', analysis)
+        self.assertIn('burnout_risk', analysis)
+        self.assertIn('recommendations', analysis)
+        
+        # CyberSecurity is uncovered (Bus Factor = 0)
+        uncovered = [item for item in analysis['critical_skills_at_risk'] if item['status'] == 'UNCOVERED']
+        self.assertEqual(len(uncovered), 1)
+        self.assertEqual(uncovered[0]['skill'], 'CyberSecurity')
+        
+        # System Design has only 1 person (Bus Factor = 1, SPOF)
+        spof = [item for item in analysis['critical_skills_at_risk'] if item['status'] == 'CRITICAL_SPOF']
+        self.assertEqual(len(spof), 1)
+        self.assertEqual(spof[0]['skill'], 'System Design')
+        
+        # Lead has load 95% -> critical burnout risk
+        self.assertEqual(analysis['burnout_risk']['risk_level'], 'HIGH')
+        self.assertEqual(len(analysis['burnout_risk']['high_load_members']), 1)
 
 
 class AlgorithmViewsTestCase(TestCase):
@@ -128,3 +160,14 @@ class AlgorithmViewsTestCase(TestCase):
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('overall_match_score', response.data)
+
+    def test_team_risks_api(self):
+        response = self.client.post('/api/v1/algorithm/risks/', {
+            'team': [{'id': str(self.emp.id), 'name': self.emp.full_name, 'current_load_percent': 60.0, 'skills_dict': {'Python': 4}}],
+            'project_id': str(self.project.id)
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('resilience_score', response.data)
+        self.assertIn('bus_factor', response.data)
+        self.assertIn('burnout_risk', response.data)
+

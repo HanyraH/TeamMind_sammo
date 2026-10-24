@@ -50,8 +50,36 @@ def run_demo():
     new_cand = {"id": 20, "name": "New Lead", "current_load_percent": 50.0, "skills_dict": {"Python": 5}}
     what_if = engine.what_if_swap(team, old_member_id=10, new_candidate=new_cand)
     print(f"   -> Score delta: {what_if['delta']:+.1f}% | Risk: {what_if['risk_assessment']}")
+    print(f"   -> Resilience Score: {what_if['resilience_score']}% | Bus-Factor: {what_if['bus_factor']}")
+
+    # 5. Team Resilience & Bus-Factor Risk Analysis
+    print("5. Team Resilience & Bus-Factor Risk Analysis (TZ §6.8):")
+    sample_team = [
+        {"id": 101, "name": "Senior Python Lead", "current_load_percent": 92.0, "skills_dict": {"Python": 5, "Architecture": 5}},
+        {"id": 102, "name": "Junior Frontend", "current_load_percent": 40.0, "skills_dict": {"React": 3, "CSS": 4}},
+        {"id": 103, "name": "DevOps Engineer", "current_load_percent": 82.0, "skills_dict": {"Docker": 4, "Kubernetes": 4}}
+    ]
+    project_roles = [
+        {"role_title": "Backend Lead", "required_skills": {"Python": 4, "Architecture": 4}},
+        {"role_title": "Frontend", "required_skills": {"React": 3}},
+        {"role_title": "DevOps", "required_skills": {"Kubernetes": 4, "Security": 3}}
+    ]
+    risks = engine.analyze_team_risks(sample_team, project_roles)
+    print(f"   -> Team Resilience Score: {risks['resilience_score']}% (Risk Level: {risks['overall_risk_level']})")
+    print(f"   -> Team Bus Factor: {risks['bus_factor']}")
+    print(f"   -> Burnout Risk Level: {risks['burnout_risk']['risk_level']} (High-load members: {len(risks['burnout_risk']['high_load_members'])})")
+    print("   -> Critical Skills & Single Points of Failure (SPOF):")
+    for item in risks['critical_skills_at_risk']:
+        print(f"      * [{item['status']}] {item['description']}")
+    print("   -> Mitigation Recommendations:")
+    for rec in risks['recommendations']:
+        print(f"      * {rec}")
+
+    assert risks['resilience_score'] > 0, "Resilience score should be calculated"
+    assert len(risks['critical_skills_at_risk']) >= 2, "Should identify uncovered Security and SPOF for Architecture/Kubernetes"
     print("=" * 65)
-    print("[SUCCESS] All Algorithm & Math modules (TZ 6.8) work correctly! OK\n")
+    print("[SUCCESS] All Algorithm, Math & Risk modules (TZ 6.8) work correctly! OK\n")
 
 if __name__ == "__main__":
     run_demo()
+
