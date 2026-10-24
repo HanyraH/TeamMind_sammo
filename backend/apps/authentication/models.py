@@ -93,6 +93,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         db_table = 'users'
         verbose_name = 'Пользователь'
+        verbose_name_plural = "Пользователи"
         indexes = [
             models.Index(fields=['email'], name='users_email_idx'),
             models.Index(fields=['tab_number'], name='users_tab_idx'),
