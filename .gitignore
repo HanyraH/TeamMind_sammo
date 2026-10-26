@@ -1,5 +1,3 @@
-
-
 # Python
 __pycache__/
 *.py[cod]
@@ -31,7 +29,6 @@ staticfiles/
 
 # Node & Frontend
 node_modules/
-dist/
 dist-ssr/
 *.local
 .env
@@ -61,8 +58,3 @@ htmlcov/
 .pytest_cache/
 test-results/
 playwright-report/
-
-=======
-=======
-node_modules
-
