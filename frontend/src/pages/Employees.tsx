@@ -4,7 +4,7 @@ import {
   Briefcase, Calendar, Shield, FileText, Laptop, Users, History, CheckCircle, AlertTriangle
 } from 'lucide-react';
 import { 
-  getEmployees, getEmployeeDetail, createEmployee, 
+  getEmployees, getEmployeeDetail, createEmployee, downloadEmployeeExport, 
   EmployeeItem, EmployeeDetailProfile 
 } from '../api/client';
 
@@ -13,6 +13,8 @@ export const Employees: React.FC = () => {
   const [search, setSearch] = useState('');
   const [filterDept, setFilterDept] = useState('ALL');
   const [loading, setLoading] = useState(false);
+  const [pageError, setPageError] = useState('');
+  const [createError, setCreateError] = useState('');
 
   // 9-tab Profile Modal state (TZ §7.6)
   const [selectedEmpId, setSelectedEmpId] = useState<string | null>(null);
@@ -33,8 +35,9 @@ export const Employees: React.FC = () => {
   const [newLoad, setNewLoad] = useState('65');
 
   useEffect(() => {
-    fetchEmployeeList();
-  }, [filterDept]);
+    const timer = window.setTimeout(() => { fetchEmployeeList(); }, search.trim() ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [filterDept, search]);
 
   const fetchEmployeeList = async () => {
     setLoading(true);
@@ -43,20 +46,18 @@ export const Employees: React.FC = () => {
         search, 
         department: filterDept !== 'ALL' ? filterDept : undefined 
       });
-      if (resp.results) {
-        setEmployees(resp.results);
-      }
-    } catch (err) {
+      const rows = Array.isArray(resp) ? resp : (Array.isArray(resp?.results) ? resp.results : []);
+      setEmployees(rows);
+      setPageError('');
+    } catch (err: any) {
       console.error('Failed to load employees:', err);
+      setPageError(err?.response?.data?.error || err?.response?.data?.detail || 'Не удалось загрузить сотрудников. Проверьте, запущен ли backend и выполнены ли миграции.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchEmployeeList();
-  };
+  const handleSearchSubmit = (e: React.FormEvent) => { e.preventDefault(); fetchEmployeeList(); }; 
 
   const handleOpenProfile = async (id: string) => {
     setSelectedEmpId(id);
@@ -74,7 +75,8 @@ export const Employees: React.FC = () => {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFirstName || !newLastName) return;
+    if (!newFirstName.trim() || !newLastName.trim()) { setCreateError('Укажите имя и фамилию сотрудника.'); return; }
+    setCreateError('');
 
     try {
       await createEmployee({
@@ -94,17 +96,17 @@ export const Employees: React.FC = () => {
       setNewLastName('');
       setNewTabNumber('');
       fetchEmployeeList();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to create employee:', err);
+      setCreateError(err?.response?.data?.error || err?.response?.data?.detail || (typeof err?.response?.data === 'string' ? err.response.data : '') || 'Не удалось создать сотрудника. Проверьте backend и обязательные поля.');
     }
   };
 
-  const handleExport = () => {
-    window.open('/api/v1/org/employees/import-export/', '_blank');
-  };
+  const handleExport = async () => { try { await downloadEmployeeExport(); } catch (err) { console.error('Employee export failed:', err); window.alert('Не удалось экспортировать сотрудников. Проверьте backend.'); } };
 
   return (
     <div className="space-y-6">
+      {pageError && <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">{pageError}</div>}
       {/* Controls Bar */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 glass-card p-4 rounded-xl border border-slate-800">
         <form onSubmit={handleSearchSubmit} className="flex items-center gap-3 w-full md:w-auto">
@@ -568,6 +570,7 @@ export const Employees: React.FC = () => {
       {isCreateOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleCreateSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4">
+            {createError && <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">{createError}</div>}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-brand-sky" />
