@@ -3,6 +3,11 @@ Organization & Employees views.
 TZ §6.2, §6.4, §6.5 — список сотрудников, фильтрация, карточка, экспорт.
 """
 import random
+import csv
+import io
+import re
+from django.db import transaction, IntegrityError
+from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -72,40 +77,63 @@ class EmployeeListView(APIView):
             "results": results
         })
 
+    @transaction.atomic
     def post(self, request):
-        """Создание нового сотрудника (ТЗ §6.2)"""
-        fn = request.data.get('first_name')
-        ln = request.data.get('last_name')
-        tab = request.data.get('tab_number') or f"EMP-{Employee.objects.count() + 1:03d}"
-        dept_name = request.data.get('department')
-        pos_title = request.data.get('position', 'Developer')
-        skills_list = request.data.get('skills', [])
-
+        """Создание сотрудника с валидацией и понятными ошибками."""
+        fn = str(request.data.get('first_name') or '').strip()
+        ln = str(request.data.get('last_name') or '').strip()
         if not fn or not ln:
-            return Response({'error': 'Имя и фамилия обязательны'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Имя и фамилия обязательны.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        dept = Department.objects.filter(name=dept_name).first() or Department.objects.first()
-        pos, _ = Position.objects.get_or_create(title=pos_title)
+        tab = str(request.data.get('tab_number') or '').strip()
+        if tab and Employee.objects.filter(tab_number=tab).exists():
+            return Response({'error': f'Табельный номер {tab} уже используется.'}, status=status.HTTP_409_CONFLICT)
+        if not tab:
+            n = 1
+            while Employee.objects.filter(tab_number=f'EMP-{n:03d}').exists():
+                n += 1
+            tab = f'EMP-{n:03d}'
+
+        load_raw = request.data.get('load', 50)
+        try:
+            load = float(load_raw)
+            if not 0 <= load <= 100:
+                raise ValueError()
+        except (TypeError, ValueError):
+            return Response({'error': 'Загрузка должна быть числом от 0 до 100.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        dept_name = str(request.data.get('department') or '').strip()
+        pos_title = str(request.data.get('position') or 'Developer').strip()
+        dept = Department.objects.filter(name=dept_name, is_deleted=False).first() or Department.objects.filter(is_deleted=False).first()
+        pos, _ = Position.objects.get_or_create(title=pos_title or 'Developer')
+        chronotype = request.data.get('chronotype', 'INTERMEDIATE')
+        work_format = request.data.get('work_format', 'OFFICE')
+        if chronotype not in dict(Employee._meta.get_field('chronotype').choices):
+            chronotype = 'INTERMEDIATE'
+        if work_format not in dict(Employee._meta.get_field('work_format').choices):
+            work_format = 'OFFICE'
 
         emp = Employee.objects.create(
-            first_name=fn,
-            last_name=ln,
-            middle_name=request.data.get('middle_name', ''),
-            tab_number=tab,
-            department=dept,
-            position=pos,
-            chronotype=request.data.get('chronotype', 'INTERMEDIATE'),
-            work_format=request.data.get('work_format', 'OFFICE'),
-            current_load_percent=float(request.data.get('load', 50)),
+            first_name=fn, last_name=ln,
+            middle_name=str(request.data.get('middle_name') or '').strip(),
+            tab_number=tab, department=dept, position=pos,
+            chronotype=chronotype, work_format=work_format,
+            current_load_percent=load,
         )
-
-        email = request.data.get('email', f"{fn.lower()}.{ln.lower()}@teammind.local")
-        phone = request.data.get('phone', '')
+        email = str(request.data.get('email') or f"{tab.lower()}@teammind.local").strip()
+        phone = str(request.data.get('phone') or '').strip()
+        if EmployeeContact.objects.filter(email=email).exists():
+            email = f"{tab.lower()}@teammind.local"
         EmployeeContact.objects.create(employee=emp, email=email, phone=phone)
 
-        for s_name in skills_list:
-            sk, _ = Skill.objects.get_or_create(name=s_name)
-            EmployeeSkill.objects.create(employee=emp, skill=sk, level=random.randint(2, 4))
+        skills_list = request.data.get('skills', [])
+        if isinstance(skills_list, str):
+            skills_list = [x.strip() for x in skills_list.split(',') if x.strip()]
+        for skill_name in skills_list:
+            if not isinstance(skill_name, str) or not skill_name.strip():
+                continue
+            sk, _ = Skill.objects.get_or_create(name=skill_name.strip())
+            EmployeeSkill.objects.get_or_create(employee=emp, skill=sk, defaults={'level': random.randint(2, 4)})
 
         return Response({'status': 'created', 'id': str(emp.id), 'tab_number': emp.tab_number}, status=status.HTTP_201_CREATED)
 
@@ -128,7 +156,15 @@ class ImportExportEmployeesView(APIView):
                 "Формат": emp.get_work_format_display(),
                 "Статус": emp.get_status_display(),
             })
-        return Response({"status": "ready", "count": len(export_data), "data": export_data})
+        if request.query_params.get('format') == 'json':
+            return Response({"status": "ready", "count": len(export_data), "data": export_data})
+        output = io.StringIO(newline='')
+        headers = list(export_data[0].keys()) if export_data else ["Табельный номер", "ФИО", "Отдел", "Должность", "Грейд", "Загрузка (%)", "Хронотип", "Формат", "Статус"]
+        writer = csv.DictWriter(output, fieldnames=headers, delimiter=';')
+        writer.writeheader(); writer.writerows(export_data)
+        response = HttpResponse('\ufeff' + output.getvalue(), content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="teammind_employees.csv"'
+        return response
 
     def post(self, request):
         return Response({"status": "imported", "message": "Импорт кадровых данных успешно завершен"})
