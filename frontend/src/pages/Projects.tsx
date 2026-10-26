@@ -11,6 +11,9 @@ export const Projects: React.FC = () => {
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [pageError, setPageError] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // New Project Form state
   const [name, setName] = useState('');
@@ -30,9 +33,11 @@ export const Projects: React.FC = () => {
     setLoading(true);
     try {
       const data = await getProjects();
-      setProjects(data);
-    } catch (err) {
+      setProjects(Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []));
+      setPageError('');
+    } catch (err: any) {
       console.error('Failed to load projects:', err);
+      setPageError(err?.response?.data?.error || err?.response?.data?.detail || 'Не удалось загрузить проекты. Проверьте соединение с backend.');
     } finally {
       setLoading(false);
     }
@@ -40,7 +45,11 @@ export const Projects: React.FC = () => {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return;
+    if (!name.trim()) { setCreateError('Введите название проекта.'); return; }
+    if (plannedEnd && plannedStart && plannedEnd < plannedStart) { setCreateError('Дата окончания не может быть раньше даты начала.'); return; }
+    if (!Number.isFinite(Number(budgetHours)) || Number(budgetHours) < 0) { setCreateError('Бюджет должен быть неотрицательным числом.'); return; }
+    setCreateError('');
+    setSaving(true);
 
     try {
       await createProject({
@@ -61,14 +70,16 @@ export const Projects: React.FC = () => {
       setName('');
       setCode('');
       setDescription('');
-      fetchProjects();
-    } catch (err) {
+      await fetchProjects();
+    } catch (err: any) {
       console.error('Failed to create project:', err);
-    }
+      setCreateError(err?.response?.data?.error || err?.response?.data?.detail || (typeof err?.response?.data === 'string' ? err.response.data : '') || 'Не удалось создать проект. Проверьте backend и данные формы.');
+    } finally { setSaving(false); }
   };
 
   return (
     <div className="space-y-6">
+      {pageError && <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">{pageError}</div>}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-card p-5 rounded-2xl border border-slate-800">
         <div>
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -167,6 +178,7 @@ export const Projects: React.FC = () => {
       {isCreateOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleCreateSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4">
+            {createError && <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">{createError}</div>}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-brand-sky" />
@@ -281,9 +293,10 @@ export const Projects: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-md"
+                disabled={saving}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-md"
               >
-                Сохранить проект
+                {saving ? 'Сохранение…' : 'Сохранить проект'}
               </button>
             </div>
           </form>
