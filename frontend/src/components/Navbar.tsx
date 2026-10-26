@@ -219,9 +219,9 @@ export const Navbar: React.FC<NavbarProps> = ({ title = 'Панель управ
         <button onClick={toggleLanguage} title={language === 'ru' ? 'Switch to English' : 'Переключить на русский'} className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-white px-2 py-1.5 rounded-lg hover:bg-slate-800/60 transition-colors"><Globe className="w-3.5 h-3.5" /><span>{language.toUpperCase()}</span></button>
       </div>
 
-      {/* Модальное окно уведомления вынесено в Portal и спозиционировано под шапкой справа */}
+      {/* Модальное окно уведомления вынесено в Portal и спозиционировано слева от выпадающего списка */}
       {selectedNotification && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-start justify-end bg-black/40 pt-20 pr-6" onClick={() => setSelectedNotification(null)}>
+        <div className="fixed inset-0 z-[100] flex items-start justify-end bg-black/40 pt-20 pr-4 md:pr-[480px]" onClick={() => setSelectedNotification(null)}>
           <div className="w-96 rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl animate-in fade-in duration-150" onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-4">
               <h2 className="text-base font-bold text-white">{selectedNotification.title}</h2>
