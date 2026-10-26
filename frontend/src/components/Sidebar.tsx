@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { NavLink } from 'react-router-dom';
 import { 
@@ -26,6 +26,9 @@ const navItems = [
 ];
 
 export const Sidebar: React.FC = () => {
+  const [language, setLanguage] = useState<'ru'|'en'>(() => (localStorage.getItem('teammind-language') as 'ru'|'en') || 'ru');
+  useEffect(() => { const update = (e: Event) => setLanguage((e as CustomEvent<'ru'|'en'>).detail); window.addEventListener('teammind-language-change', update); return () => window.removeEventListener('teammind-language-change', update); }, []);
+  const labels: Record<string,string> = language === 'en' ? {'Дашборд':'Dashboard','Сотрудники':'Employees','Проекты':'Projects','Конструктор команд':'Team builder','Календарь отсутствий':'Absence calendar','Аналитика и загрузка':'Analytics & workload','Расписание проектов':'Project schedule','Справочники и настройки':'Settings','Основное меню':'MAIN MENU'} : {};
   return (
     <aside className="w-64 bg-[#0B1120] border-r border-slate-800/80 flex flex-col h-screen sticky top-0 select-none">
       {/* Brand Header */}
@@ -35,14 +38,14 @@ export const Sidebar: React.FC = () => {
         </div>
         <div>
           <span className="font-bold text-lg tracking-wide text-white">Team<span className="text-brand-sky">Mind</span></span>
-          <div className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">AI-Powered Team Builder</div>
+          <div className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">{language === 'ru' ? 'AI-Powered Team Builder' : 'AI-Powered Team Builder'}</div>
         </div>
       </div>
 
       {/* Navigation Links */}
       <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
         <div className="px-3 pb-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-          Основное меню
+          {language === 'ru' ? 'Основное меню' : 'MAIN MENU'}
         </div>
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -63,7 +66,7 @@ export const Sidebar: React.FC = () => {
 
               <div className="flex items-center gap-3">
                 <Icon className="w-4 h-4 shrink-0" />
-                <span>{item.label}</span>
+                <span>{labels[item.label] || item.label}</span>
               </div>
               {item.badge && (
                 <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-sm">
