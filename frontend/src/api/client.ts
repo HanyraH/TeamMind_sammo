@@ -298,6 +298,6 @@ export const getDashboardKpi = async (): Promise<DashboardKpiData> => {
   return data;
 };
 
-export const downloadAnalyticsReport = () => {
-  window.open('/api/v1/analytics/export/', '_blank');
-};
+const saveBlobResponse = (blob: Blob, filename: string) => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); };
+export const downloadAnalyticsReport = async () => { const response = await api.get('/analytics/export/', { responseType: 'blob' }); saveBlobResponse(response.data, 'teammind_analytics_report.xlsx'); };
+export const downloadEmployeeExport = async () => { const response = await api.get('/org/employees/import-export/', { responseType: 'blob' }); const type = response.headers['content-type'] || ''; if (type.includes('application/json')) { const text = await response.data.text(); const parsed = JSON.parse(text); const rows = parsed.data || []; const headers = rows.length ? Object.keys(rows[0]) : ['Табельный номер','ФИО','Отдел','Должность','Грейд','Загрузка (%)','Хронотип','Формат','Статус']; const csv = [headers, ...rows.map((row: Record<string, unknown>) => headers.map(h => row[h] ?? ''))].map(row => row.map((v: unknown) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n'); saveBlobResponse(new Blob(['\ufeff', csv], {type:'text/csv;charset=utf-8'}), 'teammind_employees.csv'); return; } saveBlobResponse(response.data, 'teammind_employees.csv'); };
