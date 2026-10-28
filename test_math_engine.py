@@ -98,10 +98,19 @@ def run_demo():
     print(f"   -> Convergence recorded: {len(history)} generations (Gen 1 best: {history[0]['best_fitness']} -> Gen {len(history)} best: {history[-1]['best_fitness']})")
     assert history[-1]['best_fitness'] >= history[0]['best_fitness'], "Genetic solver must converge or maintain fitness!"
 
+    # 7. Monte Carlo Operational Risk & Stress-Testing Simulator
+    print("7. Monte Carlo Operational Risk & Stress-Testing Simulator (TZ §6.8):")
+    mc_res = engine.simulate_monte_carlo_risks(sample_team, project_roles, iterations=300)
+    print(f"   -> Success Probability: {mc_res['success_probability']}% (Risk Profile: {mc_res['risk_profile']})")
+    print(f"   -> Failure Causes: {mc_res['failure_breakdown_percent']}")
+    print(f"   -> Summary: {mc_res['summary']}")
+    assert mc_res['iterations_run'] == 300, "Should execute 300 Monte Carlo iterations"
+
     print("=" * 65)
-    print("[SUCCESS] All Algorithm, Genetic, Math & Risk modules (TZ 6.8) OK!\n")
+    print("[SUCCESS] All Algorithm, Genetic, Monte-Carlo & Risk modules (TZ 6.8) OK!\n")
 
 if __name__ == "__main__":
     run_demo()
+
 
 

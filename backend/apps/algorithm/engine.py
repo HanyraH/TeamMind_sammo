@@ -522,6 +522,110 @@ class TeamMatchingEngine:
             "recommendations": recommendations
         }
 
+    def simulate_monte_carlo_risks(
+        self,
+        team: List[Dict[str, Any]],
+        role_requirements: Optional[List[Dict[str, Any]]] = None,
+        iterations: int = 500
+    ) -> Dict[str, Any]:
+        """
+        Монте-Карло стресс-тестирование устойчивости команды (ТЗ §6.8).
+        Моделирует 500 случайных операционных сценариев реализации проекта:
+        - Внезапные больничные и отпуска (зависят от текущей нагрузки сотрудника).
+        - Риск ухода единственного носителя ключевого навыка (Bus Factor = 1).
+        - Внезапное расширение скоупа задач (Scope Creep, +20%).
+        Возвращает вероятность успешного завершения проекта (Success Probability).
+        """
+        if not team:
+            return {
+                "success_probability": 0.0,
+                "project_completion_rate": 0.0,
+                "iterations_run": iterations,
+                "failure_breakdown_percent": {"EMPTY_TEAM": 100.0},
+                "risk_profile": "CRITICAL",
+                "summary": "Команда пуста. Моделирование невозможно."
+            }
+
+        # Базовый анализ навыков и Bus Factor
+        risk_base = self.analyze_team_risks(team, role_requirements)
+        spof_skills = {item["skill"] for item in risk_base["critical_skills_at_risk"] if item["status"] == "CRITICAL_SPOF"}
+        uncovered_skills = {item["skill"] for item in risk_base["critical_skills_at_risk"] if item["status"] == "UNCOVERED"}
+
+        success_count = 0
+        failure_causes = {
+            "CRITICAL_SKILL_LOSS": 0,
+            "BURNOUT_CASCADE": 0,
+            "CAPACITY_EXHAUSTION": 0,
+            "UNCOVERED_SKILLS": 0
+        }
+
+        initial_uncovered_penalty = len(uncovered_skills) * 0.15 if uncovered_skills else 0.0
+
+        for _ in range(iterations):
+            # 1. Симуляция уходов на больничный
+            active_team = []
+            spof_carrier_absent = False
+
+            for m in team:
+                load = float(m.get("score_breakdown", {}).get("projected_load", m.get("current_load_percent", 50.0)))
+                p_absence = 0.04 + (max(0.0, load - 75.0) / 100.0) * 0.25
+
+                if random.random() < p_absence:
+                    m_skills = m.get("skills_dict", {})
+                    if any(s in spof_skills and m_skills.get(s, 0) >= 3 for s in m_skills):
+                        spof_carrier_absent = True
+                else:
+                    active_team.append(m)
+
+            # Проверка условий срыва проекта
+            if initial_uncovered_penalty > 0 and random.random() < initial_uncovered_penalty:
+                failure_causes["UNCOVERED_SKILLS"] += 1
+                continue
+
+            if spof_carrier_absent and random.random() < 0.70:
+                failure_causes["CRITICAL_SKILL_LOSS"] += 1
+                continue
+
+            if len(active_team) < len(team) * 0.65:
+                failure_causes["CAPACITY_EXHAUSTION"] += 1
+                continue
+
+            scope_creep = random.random() < 0.25
+            avg_active_load = sum(
+                float(m.get("current_load_percent", 50.0)) for m in active_team
+            ) / max(1, len(active_team))
+
+            if scope_creep and avg_active_load > 85.0:
+                failure_causes["BURNOUT_CASCADE"] += 1
+                continue
+
+            success_count += 1
+
+        success_prob = round((success_count / iterations) * 100.0, 1)
+
+        if success_prob >= 85.0:
+            profile = "STABLE"
+        elif success_prob >= 70.0:
+            profile = "MODERATE_RISK"
+        elif success_prob >= 50.0:
+            profile = "HIGH_RISK"
+        else:
+            profile = "CRITICAL_FRAGILITY"
+
+        pct_causes = {
+            k: round((v / iterations) * 100.0, 1)
+            for k, v in failure_causes.items() if v > 0
+        }
+
+        return {
+            "success_probability": success_prob,
+            "project_completion_rate": success_prob,
+            "iterations_run": iterations,
+            "risk_profile": profile,
+            "failure_breakdown_percent": pct_causes,
+            "summary": f"Монте-Карло симуляция ({iterations} итераций): вероятность сдачи проекта в срок {success_prob}%. Профиль надежности: {profile}."
+        }
+
     def generate_all_variants(
         self,
         candidates: List[Dict[str, Any]],
@@ -655,9 +759,12 @@ class TeamMatchingEngine:
         # Покрытие навыков
         new_k_avg = round(sum(m.get('score_breakdown', {}).get('k_score', 85.0) for m in filtered_team) / max(1, len(filtered_team)), 1)
         
-        # Комплексный анализ рисков и Bus Factor для обновленного состава
+        # Комплексный анализ рисков, Bus Factor и Монте-Карло стресс-тест
         risk_data = self.analyze_team_risks(filtered_team)
+        monte_carlo = self.simulate_monte_carlo_risks(filtered_team, iterations=300)
+
         risk = f"Устойчивость: {risk_data['resilience_score']}%, Bus-Factor: {risk_data['bus_factor']} ({risk_data['overall_risk_level']})"
+        risk += f" | Вероятность успеха (Монте-Карло): {monte_carlo['success_probability']}%"
         if risk_data['critical_skills_at_risk']:
             risk += f" | {risk_data['critical_skills_at_risk'][0]['description']}"
         elif delta < -5.0:
@@ -674,6 +781,7 @@ class TeamMatchingEngine:
             "resilience_score": risk_data["resilience_score"],
             "bus_factor": risk_data["bus_factor"],
             "risk_details": risk_data,
+            "monte_carlo_stress_test": monte_carlo,
             "replaced_member": old_member,
             "new_member": updated_member
         }

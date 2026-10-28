@@ -139,6 +139,19 @@ class TeamMatchingEngineTestCase(TestCase):
         self.assertEqual(len(history), 15)
         self.assertGreaterEqual(history[-1]['best_fitness'], history[0]['best_fitness'])
 
+    def test_simulate_monte_carlo_risks(self):
+        team = [
+            {'id': '1', 'name': 'Dev 1', 'current_load_percent': 50.0, 'skills_dict': {'Python': 5}},
+            {'id': '2', 'name': 'Dev 2', 'current_load_percent': 60.0, 'skills_dict': {'React': 4}},
+        ]
+        mc_res = self.engine.simulate_monte_carlo_risks(team, iterations=100)
+        self.assertIn('success_probability', mc_res)
+        self.assertIn('risk_profile', mc_res)
+        self.assertEqual(mc_res['iterations_run'], 100)
+        self.assertGreaterEqual(mc_res['success_probability'], 0.0)
+        self.assertLessEqual(mc_res['success_probability'], 100.0)
+
+
 
 
 class AlgorithmViewsTestCase(TestCase):
