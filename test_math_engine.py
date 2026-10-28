@@ -118,11 +118,28 @@ def run_demo():
     print(f"   -> Advice: {b_res['advice']}")
     assert b_res['balance_score'] >= 90.0, "Balanced team covering 3 clusters should have high score"
 
+    # 9. Dynamic Strategy Weight Presets (Crunch, Mentorship, etc.)
+    print("9. Dynamic Strategy Weight Presets (TZ §6.8):")
+    presets = engine.list_presets()
+    print(f"   -> Available presets: {[p['preset_key'] for p in presets]}")
+    assert len(presets) >= 5, "Must provide at least 5 standard presets"
+    
+    # Apply Crunch preset
+    crunch_weights = engine.apply_preset("CRUNCH")
+    print(f"   -> Applied CRUNCH preset: K={crunch_weights['K']:.2f}, A={crunch_weights['A']:.2f}")
+    assert crunch_weights['K'] >= 0.45, "Crunch mode must prioritize skills match K"
+
+    # Apply Mentorship preset
+    mentor_weights = engine.apply_preset("MENTORSHIP")
+    print(f"   -> Applied MENTORSHIP preset: K={mentor_weights['K']:.2f}, L={mentor_weights['L']:.2f}, C={mentor_weights['C']:.2f}")
+    assert mentor_weights['C'] >= 0.15, "Mentorship mode must value compatibility and workload"
+
     print("=" * 65)
-    print("[SUCCESS] All Algorithm, Genetic, Belbin, Monte-Carlo & Risk modules (TZ 6.8) OK!\n")
+    print("[SUCCESS] All Algorithm, Presets, Genetic, Belbin & Risk modules (TZ 6.8) OK!\n")
 
 if __name__ == "__main__":
     run_demo()
+
 
 
 

@@ -218,3 +218,10 @@ class AlgorithmViewsTestCase(TestCase):
         self.assertIn('bus_factor', response.data)
         self.assertIn('burnout_risk', response.data)
 
+    def test_presets_api(self):
+        response = self.client.get('/api/v1/algorithm/presets/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('presets', response.data)
+        self.assertGreaterEqual(len(response.data['presets']), 5)
+
+

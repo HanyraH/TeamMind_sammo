@@ -16,13 +16,68 @@ DEFAULT_WEIGHTS = {
     'C': 0.10   # Совместимость с коллегами (Colleague Compatibility)
 }
 
+# Пресеты динамической калибровки весов под различные бизнес-сценарии
+PRESET_PROFILES = {
+    "BALANCED": {
+        "name": "Сбалансированный (Стандарт ТЗ §6.8)",
+        "description": "Оптимальный баланс всех критериев для плановых проектов",
+        "weights": {'K': 0.35, 'A': 0.25, 'L': 0.20, 'T': 0.10, 'C': 0.10}
+    },
+    "CRUNCH": {
+        "name": "Аврал / Горящий релиз (Crunch Mode)",
+        "description": "Максимизация навыков и доступности для критических сроков",
+        "weights": {'K': 0.50, 'A': 0.35, 'L': 0.05, 'T': 0.05, 'C': 0.05}
+    },
+    "MENTORSHIP": {
+        "name": "Обучение и менторство (Growth & Mentorship)",
+        "description": "Сниженный упор на опыт в пользу роста мидлов и джунов под менторством",
+        "weights": {'K': 0.25, 'A': 0.20, 'L': 0.25, 'T': 0.10, 'C': 0.20}
+    },
+    "FAST_PACE": {
+        "name": "Быстрый старт (Минимальная загрузка)",
+        "description": "Приоритет сотрудникам с максимальным запасом свободного времени",
+        "weights": {'K': 0.20, 'A': 0.30, 'L': 0.40, 'T': 0.05, 'C': 0.05}
+    },
+    "DISTRIBUTED_SYNC": {
+        "name": "Распределенная команда (Синхронность)",
+        "description": "Максимальное пересечение рабочих окон и совпадение хронотипов",
+        "weights": {'K': 0.30, 'A': 0.20, 'L': 0.10, 'T': 0.30, 'C': 0.10}
+    }
+}
+
 class TeamMatchingEngine:
-    def __init__(self, weights: Optional[Dict[str, float]] = None):
-        self.weights = weights or dict(DEFAULT_WEIGHTS)
+    def __init__(self, weights: Optional[Dict[str, float]] = None, preset: Optional[str] = None):
+        if preset and preset.upper() in PRESET_PROFILES:
+            self.current_preset = preset.upper()
+            self.weights = dict(PRESET_PROFILES[self.current_preset]["weights"])
+        else:
+            self.current_preset = "CUSTOM" if weights else "BALANCED"
+            self.weights = weights or dict(DEFAULT_WEIGHTS)
+
         # Нормализация весов если сумма != 1.0
         total_w = sum(self.weights.values())
         if total_w > 0:
             self.weights = {k: v / total_w for k, v in self.weights.items()}
+
+    def apply_preset(self, preset_name: str) -> Dict[str, float]:
+        """Применение одного из готовых пресетов калибровки весов."""
+        preset_key = preset_name.upper()
+        if preset_key in PRESET_PROFILES:
+            self.current_preset = preset_key
+            self.weights = dict(PRESET_PROFILES[preset_key]["weights"])
+            total_w = sum(self.weights.values())
+            if total_w > 0:
+                self.weights = {k: v / total_w for k, v in self.weights.items()}
+            return self.weights
+        raise ValueError(f"Неизвестный пресет '{preset_name}'. Доступны: {list(PRESET_PROFILES.keys())}")
+
+    @classmethod
+    def list_presets(cls) -> List[Dict[str, Any]]:
+        """Возвращает список доступных пресетов с описанием."""
+        return [
+            {"preset_key": k, **v}
+            for k, v in PRESET_PROFILES.items()
+        ]
 
     def filter_hard_constraints(
         self,

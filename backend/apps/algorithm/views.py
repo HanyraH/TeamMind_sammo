@@ -172,14 +172,16 @@ class RunTeamMatchingView(APIView):
         candidates = [_build_candidate_dict(emp) for emp in emp_qs]
         role_reqs = _get_project_role_requirements(project)
 
-        # Вызов движка
-        engine = TeamMatchingEngine(weights=weights)
+        # Вызов движка с поддержкой пресетов
+        user_preset = request.data.get('preset')
+        engine = TeamMatchingEngine(weights=weights if user_weights else None, preset=user_preset)
         variants = engine.generate_all_variants(candidates, role_reqs, count=count)
 
         return Response({
             "project_id": str(project.id),
             "project_code": project.code,
             "project_name": project.name,
+            "preset_used": getattr(engine, 'current_preset', 'CUSTOM'),
             "weights_used": engine.weights,
             "candidates_considered": len(candidates),
             "roles_count": len(role_reqs),
@@ -291,4 +293,17 @@ class TeamRiskAssessmentView(APIView):
         engine = TeamMatchingEngine()
         risks = engine.analyze_team_risks(team=team, role_requirements=role_requirements)
         return Response(risks)
+
+
+class AlgorithmPresetsView(APIView):
+    """
+    Получение списка доступных пресетов динамической калибровки весов (ТЗ §6.8).
+    Поддерживает пресеты: BALANCED, CRUNCH, MENTORSHIP, FAST_PACE, DISTRIBUTED_SYNC.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        presets = TeamMatchingEngine.list_presets()
+        return Response({"presets": presets})
+
 
