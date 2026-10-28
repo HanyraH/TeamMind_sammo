@@ -106,11 +106,24 @@ def run_demo():
     print(f"   -> Summary: {mc_res['summary']}")
     assert mc_res['iterations_run'] == 300, "Should execute 300 Monte Carlo iterations"
 
+    # 8. Belbin Team Roles & Cognitive Diversity Balance
+    print("8. Belbin Team Roles & Cognitive Diversity Balance (TZ §6.8):")
+    belbin_team = [
+        {"id": 1, "name": "Alice Leader", "belbin_role": "COORDINATOR"},
+        {"id": 2, "name": "Bob Builder", "belbin_role": "IMPLEMENTER"},
+        {"id": 3, "name": "Charlie Thinker", "belbin_role": "PLANT"}
+    ]
+    b_res = engine.analyze_belbin_balance(belbin_team)
+    print(f"   -> Belbin Balance Score: {b_res['balance_score']}% (Clusters: {b_res['clusters']})")
+    print(f"   -> Advice: {b_res['advice']}")
+    assert b_res['balance_score'] >= 90.0, "Balanced team covering 3 clusters should have high score"
+
     print("=" * 65)
-    print("[SUCCESS] All Algorithm, Genetic, Monte-Carlo & Risk modules (TZ 6.8) OK!\n")
+    print("[SUCCESS] All Algorithm, Genetic, Belbin, Monte-Carlo & Risk modules (TZ 6.8) OK!\n")
 
 if __name__ == "__main__":
     run_demo()
+
 
 
 

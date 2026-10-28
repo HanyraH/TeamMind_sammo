@@ -129,7 +129,7 @@ class TeamMatchingEngine:
         }
         t_score = chrono_compat_matrix.get((cand_chrono, target_chrono), 80.0)
 
-        # --- C: Colleague Compatibility [0..100] ---
+        # --- C: Colleague Compatibility & Belbin Role Synergy [0..100] ---
         c_score = 80.0
         if team_context:
             pref_colleagues = set(candidate.get('preferred_colleagues', []))
@@ -139,6 +139,17 @@ class TeamMatchingEngine:
             bonus = len(pref_colleagues & team_ids) * 10.0
             penalty = len(disliked_colleagues & team_ids) * 25.0
             c_score = max(20.0, min(100.0, c_score + bonus - penalty))
+
+            # Ролевая синергия по Белбину (Action / People / Thought)
+            cand_belbin = candidate.get('belbin_role', 'SPECIALIST')
+            team_belbin_roles = [m.get('belbin_role', 'SPECIALIST') for m in team_context]
+            
+            # Штраф за дублирование доминантных ролей (два Shaper вызывают конфликт)
+            if cand_belbin in ['SHAPER', 'COORDINATOR'] and cand_belbin in team_belbin_roles:
+                c_score = max(20.0, c_score - 12.0)
+            # Бонус за привносимый новый психотип в команду
+            elif cand_belbin not in team_belbin_roles:
+                c_score = min(100.0, c_score + 6.0)
         else:
             c_score = float(candidate.get('compatibility_rating', 80.0))
 
@@ -371,6 +382,69 @@ class TeamMatchingEngine:
 
         return enriched_team
 
+    def analyze_belbin_balance(self, team: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Анализ командных ролей по модели доктора Мередита Белбина (Belbin Team Roles).
+        Группировка ролей по 3 кластерам:
+        1. Action (Действие): SHAPER, IMPLEMENTER, COMPLETER_FINISHER
+        2. People (Люди): COORDINATOR, TEAMWORKER, RESOURCE_INVESTIGATOR
+        3. Thought (Мышление): PLANT, MONITOR_EVALUATOR, SPECIALIST
+        """
+        role_clusters = {
+            "ACTION": {"SHAPER", "IMPLEMENTER", "COMPLETER_FINISHER"},
+            "PEOPLE": {"COORDINATOR", "TEAMWORKER", "RESOURCE_INVESTIGATOR"},
+            "THOUGHT": {"PLANT", "MONITOR_EVALUATOR", "SPECIALIST"}
+        }
+
+        cluster_counts = {"ACTION": 0, "PEOPLE": 0, "THOUGHT": 0}
+        assigned_roles = []
+
+        for m in team:
+            role = str(m.get('belbin_role', 'SPECIALIST')).upper()
+            assigned_roles.append({"member_id": m.get('id'), "name": m.get('name'), "role": role})
+            for cluster, roles in role_clusters.items():
+                if role in roles:
+                    cluster_counts[cluster] += 1
+                    break
+            else:
+                cluster_counts["THOUGHT"] += 1
+
+        total_members = len(team)
+        covered_clusters = sum(1 for c in cluster_counts.values() if c > 0)
+
+        if total_members == 0:
+            balance_score = 0.0
+        elif covered_clusters == 3:
+            balance_score = 95.0
+        elif covered_clusters == 2:
+            balance_score = 75.0
+        else:
+            balance_score = 50.0
+
+        shaper_count = sum(1 for r in assigned_roles if r["role"] == "SHAPER")
+        conflicts = []
+        if shaper_count > 1:
+            conflicts.append(f"Конфликт лидерства: {shaper_count} сотрудника с ролью SHAPER (Мотиватор). Высокий риск борьбы за влияние.")
+
+        missing_clusters = [k for k, v in cluster_counts.items() if v == 0]
+        advice = []
+        if "ACTION" in missing_clusters:
+            advice.append("Нехватка роли 'Действие' (Implementer/Shaper): риск затягивания реализации задач.")
+        if "PEOPLE" in missing_clusters:
+            advice.append("Нехватка роли 'Люди' (Coordinator/Teamworker): риск коммуникационных барьеров.")
+        if "THOUGHT" in missing_clusters:
+            advice.append("Нехватка роли 'Мышление' (Plant/Specialist): риск шаблонных решений.")
+        if not advice and not conflicts:
+            advice.append("Командные роли гармонично распределены по всем 3 кластерам Белбина.")
+
+        return {
+            "balance_score": balance_score,
+            "clusters": cluster_counts,
+            "assigned_roles": assigned_roles,
+            "conflicts": conflicts,
+            "advice": advice
+        }
+
     def analyze_team_risks(
         self,
         team: List[Dict[str, Any]],
@@ -503,10 +577,10 @@ class TeamMatchingEngine:
             recommendations.append(f"Критично: добавьте в команду носителей {uncovered_cnt} недостающих навыков.")
         if spof_cnt > 0:
             recommendations.append(f"Риск потери кадров (Bus Factor=1) по {spof_cnt} компетенциям. Организуйте кросс-ревью и парное менторство.")
-        if any(h["severity"] == "CRITICAL" for h in high_load_members):
-            recommendations.append("Обнаружен риск выгорания: перераспределите задачи со сверхзагруженных сотрудников (>90%).")
-        if not recommendations:
-            recommendations.append("Команда сбалансирована, риски концентрации компетенций и перегрузок минимальны.")
+        # 4. Анализ психологических ролей по Белбину
+        belbin_balance = self.analyze_belbin_balance(team)
+        if belbin_balance["conflicts"]:
+            recommendations.extend(belbin_balance["conflicts"])
 
         return {
             "resilience_score": resilience,
@@ -519,6 +593,7 @@ class TeamMatchingEngine:
                 "load_std_dev": round(load_std_dev, 1),
                 "high_load_members": high_load_members
             },
+            "belbin_balance": belbin_balance,
             "recommendations": recommendations
         }
 

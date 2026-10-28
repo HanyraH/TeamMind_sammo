@@ -151,6 +151,20 @@ class TeamMatchingEngineTestCase(TestCase):
         self.assertGreaterEqual(mc_res['success_probability'], 0.0)
         self.assertLessEqual(mc_res['success_probability'], 100.0)
 
+    def test_belbin_balance_analysis(self):
+        balanced_team = [
+            {'id': '1', 'name': 'Leader', 'belbin_role': 'COORDINATOR'},
+            {'id': '2', 'name': 'Worker', 'belbin_role': 'IMPLEMENTER'},
+            {'id': '3', 'name': 'Creator', 'belbin_role': 'PLANT'}
+        ]
+        res = self.engine.analyze_belbin_balance(balanced_team)
+        self.assertEqual(res['balance_score'], 95.0)
+        self.assertEqual(res['clusters']['ACTION'], 1)
+        self.assertEqual(res['clusters']['PEOPLE'], 1)
+        self.assertEqual(res['clusters']['THOUGHT'], 1)
+        self.assertEqual(len(res['conflicts']), 0)
+
+
 
 
 
