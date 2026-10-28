@@ -77,9 +77,31 @@ def run_demo():
 
     assert risks['resilience_score'] > 0, "Resilience score should be calculated"
     assert len(risks['critical_skills_at_risk']) >= 2, "Should identify uncovered Security and SPOF for Architecture/Kubernetes"
+
+    # 6. Advanced Genetic Algorithm with Order Crossover (OX) & Simulated Annealing
+    print("6. Genetic Solver (Order Crossover & Annealing Convergence):")
+    candidates_pool = [
+        {"id": i, "name": f"Candidate {i}", "is_active": True, "status": "ACTIVE",
+         "availability_percent": 100.0, "current_load_percent": 50.0 + (i % 20),
+         "chronotype": "DAY", "skills_dict": {"Python": (i % 5) + 1, "Django": ((i + 2) % 5) + 1}}
+        for i in range(1, 25)
+    ]
+    roles_req = [
+        {"role_title": "Lead", "required_skills": {"Python": 5}, "headcount": 1},
+        {"role_title": "Senior Dev", "required_skills": {"Python": 4, "Django": 4}, "headcount": 2},
+        {"role_title": "Junior Dev", "required_skills": {"Python": 2}, "headcount": 1}
+    ]
+    gen_team, history = engine.run_genetic(candidates_pool, roles_req, generations=20, return_convergence=True)
+    team_ids = [m["id"] for m in gen_team]
+    print(f"   -> Team assembled: {len(gen_team)} members (Unique IDs: {len(set(team_ids))} of {len(team_ids)})")
+    assert len(team_ids) == len(set(team_ids)), "OX Crossover must guarantee duplicate-free assignments!"
+    print(f"   -> Convergence recorded: {len(history)} generations (Gen 1 best: {history[0]['best_fitness']} -> Gen {len(history)} best: {history[-1]['best_fitness']})")
+    assert history[-1]['best_fitness'] >= history[0]['best_fitness'], "Genetic solver must converge or maintain fitness!"
+
     print("=" * 65)
-    print("[SUCCESS] All Algorithm, Math & Risk modules (TZ 6.8) work correctly! OK\n")
+    print("[SUCCESS] All Algorithm, Genetic, Math & Risk modules (TZ 6.8) OK!\n")
 
 if __name__ == "__main__":
     run_demo()
+
 

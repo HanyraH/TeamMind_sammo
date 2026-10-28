@@ -218,12 +218,14 @@ class TeamMatchingEngine:
         candidates: List[Dict[str, Any]],
         role_requirements: List[Dict[str, Any]],
         generations: int = 40,
-        population_size: int = 16
-    ) -> List[Dict[str, Any]]:
+        population_size: int = 16,
+        return_convergence: bool = False
+    ) -> Any:
         """
-        Генетический алгоритм подбора оптимальной команды.
-        Хромосома: вектор назначений кандидатов по ролевым слотам.
-        Операторы: скрещивание (crossover), мутация (mutation), селекция (elitism).
+        Оптимизированный генетический алгоритм подбора команды (ТЗ §6.8).
+        - Бесконфликтный оператор скрещивания (Order-Based Crossover / OX) без дублирования кандидатов.
+        - Адаптивное охлаждение мутации (Simulated Annealing: от 0.40 до 0.05).
+        - Трекинг сходимости поколений (Convergence history).
         """
         # Сформируем список требуемых слотов
         slots = []
@@ -232,7 +234,8 @@ class TeamMatchingEngine:
                 slots.append(r_req)
 
         if not slots or not candidates:
-            return self.run_greedy(candidates, role_requirements)
+            res = self.run_greedy(candidates, role_requirements)
+            return (res, []) if return_convergence else res
 
         # Кандидаты, удовлетворяющие базовым фильтрам
         valid_candidates = [c for c in candidates if c.get('is_active', True) and c.get('status') != 'FIRED']
@@ -248,13 +251,46 @@ class TeamMatchingEngine:
             for i, member in enumerate(team):
                 m_id = member.get('id')
                 if m_id in seen_ids:
-                    dup_penalty += 35.0
+                    dup_penalty += 40.0
                 seen_ids.add(m_id)
                 r_req = slots[min(i, len(slots) - 1)]
                 res = self.calculate_score(member, r_req, team_context=team)
                 total += res['total_score']
             avg = total / len(team)
             return max(0.0, avg - dup_penalty)
+
+        # Конфликт-фри кроссовер (Order Crossover / OX)
+        def order_crossover(p1: List[Dict[str, Any]], p2: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            n = len(slots)
+            if n <= 1:
+                return list(p1)
+            
+            idx1, idx2 = sorted(random.sample(range(n), 2))
+            child = [None] * n
+            used_ids = set()
+
+            # Копируем сегмент из Parent 1
+            for i in range(idx1, idx2 + 1):
+                child[i] = p1[i]
+                used_ids.add(p1[i].get('id'))
+
+            # Заполняем остальные слоты генами из Parent 2, сохраняя порядок
+            p2_filtered = [c for c in p2 if c.get('id') not in used_ids]
+            p2_idx = 0
+            for i in range(n):
+                if child[i] is None:
+                    if p2_idx < len(p2_filtered):
+                        candidate = p2_filtered[p2_idx]
+                        p2_idx += 1
+                    else:
+                        avail = [c for c in valid_candidates if c.get('id') not in used_ids]
+                        candidate = random.choice(avail) if avail else random.choice(valid_candidates)
+                    
+                    r_title = slots[i].get('role_title', 'Member')
+                    child[i] = {**candidate, 'role_assigned': r_title}
+                    used_ids.add(candidate.get('id'))
+
+            return child
 
         # Начальная популяция (жадное решение + случайные вариации)
         population = []
@@ -270,26 +306,40 @@ class TeamMatchingEngine:
                 rand_team.append({**c, 'role_assigned': r_title})
             population.append(rand_team)
 
-        # Эволюционный цикл
+        convergence_history = []
+
+        # Эволюционный цикл с адаптивным отжигом (Simulated Annealing)
         for gen in range(generations):
             scored_pop = [(evaluate_team(t), t) for t in population]
             scored_pop.sort(key=lambda x: x[0], reverse=True)
 
+            best_fit = round(scored_pop[0][0], 2)
+            avg_fit = round(sum(s for s, _ in scored_pop) / len(scored_pop), 2)
+            convergence_history.append({
+                "generation": gen + 1,
+                "best_fitness": best_fit,
+                "avg_fitness": avg_fit
+            })
+
             # Элитизм: берем топ-4
             new_pop = [t for _, t in scored_pop[:4]]
+
+            # Адаптивное охлаждение мутации: от 0.40 до 0.05
+            adaptive_mutation_rate = max(0.05, 0.40 * (1.0 - (gen / max(1, generations))))
 
             while len(new_pop) < population_size:
                 p1 = random.choice(scored_pop[:8])[1]
                 p2 = random.choice(scored_pop[:8])[1]
 
-                # Кроссовер (одноточечный обмен ролями)
-                split = random.randint(1, max(1, len(slots) - 1))
-                child = p1[:split] + p2[split:]
+                # Применяем Order Crossover (OX)
+                child = order_crossover(p1, p2)
 
-                # Мутация (15% шанс случайной замены кандидата)
-                if random.random() < 0.25:
+                # Мутация с выбором неиспользованного кандидата
+                if random.random() < adaptive_mutation_rate:
                     mutate_idx = random.randint(0, len(child) - 1)
-                    new_cand = random.choice(valid_candidates)
+                    current_ids = {m.get('id') for m in child}
+                    pool = [c for c in valid_candidates if c.get('id') not in current_ids]
+                    new_cand = random.choice(pool) if pool else random.choice(valid_candidates)
                     r_title = slots[mutate_idx].get('role_title', 'Member')
                     child[mutate_idx] = {**new_cand, 'role_assigned': r_title}
 
@@ -302,6 +352,8 @@ class TeamMatchingEngine:
         final_scored.sort(key=lambda x: x[0], reverse=True)
         best_team = final_scored[0][1]
 
+        self.last_convergence_history = convergence_history
+
         # Обогащаем результат скорами
         enriched_team = []
         for i, member in enumerate(best_team):
@@ -313,6 +365,9 @@ class TeamMatchingEngine:
                 'final_score': score_res['total_score'],
                 'score_breakdown': score_res
             })
+
+        if return_convergence:
+            return enriched_team, convergence_history
 
         return enriched_team
 
@@ -526,8 +581,9 @@ class TeamMatchingEngine:
 
         variants = []
         for st in strategies[:max(3, min(5, count))]:
+            conv = []
             if st["algo"] == "GENETIC":
-                members = self.run_genetic(candidates, role_requirements)
+                members, conv = self.run_genetic(candidates, role_requirements, return_convergence=True)
             else:
                 members = self.run_greedy(candidates, role_requirements, weights_override=st["weights"])
 
@@ -554,6 +610,7 @@ class TeamMatchingEngine:
                 "resilience_score": risk_analysis["resilience_score"],
                 "bus_factor": risk_analysis["bus_factor"],
                 "risk_details": risk_analysis,
+                "convergence_history": conv,
                 "members": members,
                 "explanation": f"Вариант сформирован по стратегии '{st['name']}'. Покрытие навыков: {avg_skills}%, средняя планируемая загрузка: {avg_load}%. Устойчивость команды: {risk_analysis['resilience_score']}% (Bus Factor = {risk_analysis['bus_factor']})."
             })

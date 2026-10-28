@@ -120,6 +120,26 @@ class TeamMatchingEngineTestCase(TestCase):
         self.assertEqual(analysis['burnout_risk']['risk_level'], 'HIGH')
         self.assertEqual(len(analysis['burnout_risk']['high_load_members']), 1)
 
+    def test_genetic_algorithm_order_crossover_and_convergence(self):
+        candidates = [
+            {'id': i, 'name': f'Dev {i}', 'is_active': True, 'status': 'ACTIVE',
+             'availability_percent': 100.0, 'current_load_percent': 40.0,
+             'skills_dict': {'Python': (i % 5) + 1, 'Django': 4}}
+            for i in range(1, 15)
+        ]
+        role_reqs = [
+            {'role_title': 'Lead', 'required_skills': {'Python': 5}, 'headcount': 1},
+            {'role_title': 'Dev', 'required_skills': {'Python': 3, 'Django': 3}, 'headcount': 2}
+        ]
+        team, history = self.engine.run_genetic(candidates, role_reqs, generations=15, return_convergence=True)
+        self.assertEqual(len(team), 3)
+        # Check no duplicates
+        ids = [m['id'] for m in team]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(len(history), 15)
+        self.assertGreaterEqual(history[-1]['best_fitness'], history[0]['best_fitness'])
+
+
 
 class AlgorithmViewsTestCase(TestCase):
     def setUp(self):
