@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, Sliders, CheckCircle, RefreshCw, AlertCircle, 
   ArrowRightLeft, ShieldAlert, X, UserCheck, TrendingUp, TrendingDown,
-  Briefcase, Clock, Zap
+  Briefcase, Clock, Zap, Shield, Activity, AlertTriangle
 } from 'lucide-react';
 import { 
   runTeamMatch, getWhatIfCandidates, runWhatIfSwap, getProjects, 
@@ -23,6 +23,12 @@ export const TeamConstructor: React.FC = () => {
   const [selectedVariantId, setSelectedVariantId] = useState<number>(1);
   const [isCalculating, setIsCalculating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  //////
+  /////
+  const [presets, setPresets] = useState<Array<{key: string; name: string; description: string}>>([]);
+  const [selectedPreset, setSelectedPreset] = useState<string>('Balanced');
+  ///
+  ///
 
   // What-If interactive replacement state
   const [isWhatIfOpen, setIsWhatIfOpen] = useState(false);
@@ -39,41 +45,49 @@ export const TeamConstructor: React.FC = () => {
 
   const loadProjectsAndMatch = async () => {
     try {
+      const list = await getAlgorithmPresets();
+      if (Array.isArray(list) && list.length >=0) {
+        setPresets(list);
+        setSelectedPreset(list[0].key);
+      }
+    } catch (err: any) {
+      console.warn('Failed  to load presets, fallback to BALANCED', err);
+    }
+
+    try {
       const prjList = await getProjects();
       setProjects(prjList);
       const initialPrjId = prjList.length > 0 ? prjList[0].id : '';
       setSelectedProjectId(initialPrjId);
-      await executeMatch(initialPrjId, 35, 25, 20, 10, 10);
-    } catch (err: any) {
+      await executeMatch(initialPrjId, 'BALANCED');
+    } catch(err: any) {
       console.error('Failed to initialize projects:', err);
-      // Fallback fallback execution
-      await executeMatch('', 35, 25, 20, 10, 10);
+      await executeMatch('', 'BALANCED');
     }
   };
 
-  const executeMatch = async (
-    prjId: string, 
-    k: number, 
-    a: number, 
-    l: number, 
-    t: number, 
-    c: number
-  ) => {
+  const executeMatch = async (prjId: string, preset: string) => {
     setIsCalculating(true);
     setErrorMsg(null);
     try {
-      const totalW = (k + a + l + t + c) || 100;
-      const resp = await runTeamMatch({
+      const payload: Record<string, unknown> = {
         project_id: prjId || undefined,
-        weights: {
-          K: k / totalW,
-          A: a / totalW,
-          L: l / totalW,
-          T: t / totalW,
-          C: c / totalW,
-        },
-        count: 3
-      });
+        preset,
+        count: 3,
+      };
+
+      if (preset === 'CUSTOM ') {
+        const totalW = (weightK + weightA + weightL + weightT + weightC) || 100;
+        payload.weights = {
+          K: weightK / totalW,
+          A: weightA / totalW,
+          L: weightL / totalW,
+          T: weightT / totalW,
+          C: weightC / totalW
+        };
+      }
+
+      const resp = await runTeamMatch(payload as any);
 
       if (resp.variants && resp.variants.length > 0) {
         setVariants(resp.variants);
@@ -81,14 +95,14 @@ export const TeamConstructor: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Error running team matching:', err);
-      setErrorMsg('Не удалось выполнить подбор через API. Проверьте соединение с сервером.');
+      setErrorMsg('не удалось выполнить подбор через API. проверьте соединение с сервером.');
     } finally {
       setIsCalculating(false);
     }
   };
 
   const handleRunMatch = () => {
-    executeMatch(selectedProjectId, weightK, weightA, weightL, weightT, weightC);
+    executeMatch(selectedProjectId, selectedPreset);
   };
 
   // Open What-If Modal for a member
@@ -184,7 +198,7 @@ export const TeamConstructor: React.FC = () => {
                 value={selectedProjectId}
                 onChange={(e) => {
                   setSelectedProjectId(e.target.value);
-                  executeMatch(e.target.value, weightK, weightA, weightL, weightT, weightC);
+                  executeMatch(e.target.value, selectedPreset);
                 }}
                 className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
               >
