@@ -230,7 +230,11 @@ export interface AlgoVariant {
   skills_coverage: number;
   avg_availability: number;
   avg_load: number;
-  risk_level: 'LOW' | 'MEDIUM' | 'HIGH';
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  resilience_score: number;
+  bus_factor: number;
+  risk_details: RiskDetails;
+  convergence_history?: Array<{ generation: number; best_fitness: number; avg_fitness: number }>;
   members: AlgoMember[];
   explanation?: string;
 }
@@ -380,4 +384,40 @@ export const downloadEmployeeExport = async () => {
     return;
   }
   saveBlobResponse(response.data, 'teammind_employees.csv');
+};
+
+export interface BelbinClusterData {
+  ACTION: number;
+  PEOPLE: number;
+  THOUGHT: number;
+}
+
+export interface RiskDetails {
+  resilience_score: number;
+  overall_risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  bus_factor: number;
+  critical_skills_at_risk: Array<{
+    skill: string;
+    bus_factor: number;
+    status: string;
+    sole_carrier?: string;
+    description: string;
+  }>;
+  belbin_balance?: {
+    balance_score: number;
+    clusters: BelbinClusterData;
+    conflicts: string[];
+    advice: string[];
+  };
+  recommendations: string[];
+}
+
+export const getAlgorithmPresets = async () => {
+  const { data } = await api.get('/algorithm/presets/');
+  return data.presets;
+};
+
+export const getTeamRisks = async (payload: { team: any[]; project_id?: string }) => {
+  const { data } = await api.post('/algorithm/risks/', payload);
+  return data;
 };
