@@ -79,7 +79,7 @@ export const AbsencesCalendar: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEmpId || !startDate || !endDate) return;
+    if (!selectedEmpId || !startDate || !endDate || endDate < startDate) return;
 
     try {
       await submitAbsence({
@@ -102,12 +102,16 @@ export const AbsencesCalendar: React.FC = () => {
     }
   };
 
-  // Find all employees absent on the selected day
-  const absentOnSelectedDay = events.filter(e => {
+  // Утверждённые отсутствия считаются фактическими; ожидающие согласования
+  // остаются видимыми в календаре как заявки и не уменьшают доступность.
+  const eventsOnSelectedDay = events.filter(e => {
     const s = e.start.slice(0, 10);
     const end = e.end.slice(0, 10);
     return selectedDateStr >= s && selectedDateStr <= end;
   });
+  const absentOnSelectedDay = eventsOnSelectedDay.filter(
+    e => String(e.status || '').toUpperCase() === 'APPROVED'
+  );
 
   const formatDateDisplay = (isoStr: string) => {
     if (!isoStr) return '';
@@ -207,7 +211,8 @@ export const AbsencesCalendar: React.FC = () => {
                 const dayEvents = events.filter(e => {
                   const s = e.start.slice(0, 10);
                   const end = e.end.slice(0, 10);
-                  return dateStr >= s && dateStr <= end;
+                  return dateStr >= s && dateStr <= end &&
+                    String(e.status || '').toUpperCase() === 'APPROVED';
                 });
 
                 const isSelected = selectedDateStr === dateStr;
@@ -288,7 +293,7 @@ export const AbsencesCalendar: React.FC = () => {
               Выбран день: <strong className="text-white">{selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
             </span>
             <span className="font-mono text-brand-sky">
-              {absentOnSelectedDay.length > 0 ? `${absentOnSelectedDay.length} отсутствующих` : 'Все работают'}
+              {absentOnSelectedDay.length > 0 ? `${absentOnSelectedDay.length} отсутствующих` : 'Нет утверждённых отсутствий'}
             </span>
           </div>
         </div>
@@ -312,13 +317,13 @@ export const AbsencesCalendar: React.FC = () => {
                   ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' 
                   : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
               }`}>
-                {absentOnSelectedDay.length > 0 ? `${absentOnSelectedDay.length} отсутствуют` : 'Все на месте'}
+                {absentOnSelectedDay.length > 0 ? `${absentOnSelectedDay.length} отсутствуют` : 'Нет утверждённых отсутствий'}
               </span>
             </div>
 
             {/* List of absent employees on the selected date */}
             <div className="space-y-3 overflow-y-auto max-h-[440px] pr-1">
-              {absentOnSelectedDay.length === 0 ? (
+              {eventsOnSelectedDay.length === 0 ? (
                 <div className="p-6 bg-slate-900/50 rounded-2xl border border-slate-800 text-center space-y-3 my-4">
                   <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
                     <UserCheck className="w-6 h-6" />
@@ -341,7 +346,7 @@ export const AbsencesCalendar: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                absentOnSelectedDay.map((evt, idx) => {
+                eventsOnSelectedDay.map((evt, idx) => {
                   const daysLeft = calculateDaysRemaining(evt.end);
                   return (
                     <div 
@@ -368,6 +373,13 @@ export const AbsencesCalendar: React.FC = () => {
                           </div>
                         </div>
 
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${
+                          String(evt.status || '').toUpperCase() === 'APPROVED'
+                            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                        }`}>
+                          {evt.status_display || (String(evt.status || '').toUpperCase() === 'APPROVED' ? 'Утверждено' : 'На согласовании')}
+                        </span>
                         <span 
                           className="text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0"
                           style={{
@@ -500,6 +512,7 @@ export const AbsencesCalendar: React.FC = () => {
                 <input
                   type="date"
                   required
+                  min={startDate}
                   value={endDate}
                   onChange={e => setEndDate(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white"
