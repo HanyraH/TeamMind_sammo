@@ -168,6 +168,21 @@ class Employee(models.Model):
                                     related_name='updated_employees')
     is_deleted  = models.BooleanField(default=False)
     deleted_at  = models.DateTimeField(null=True, blank=True)
+    belbin_role = models.CharField(
+        max_length=30,
+        default='SPECIALIST',
+        choices=[('COORDINATOR', 'Координатор'),
+                ('SHAPER', 'Мотиватор (Shaper)'),
+                ('PLANT', 'Генератор идей (Plant)'),
+                ('MONITOR_EVALUATOR', 'Аналитик (Monitor Evaluator)'),
+                ('IMPLEMENTER', 'Реализатор (Implementer)'),
+                ('COMPLETER_FINISHER', 'Педант (Completer Finisher)'),
+                ('TEAMWORKER', 'Душа команды (Teamworker)'),
+                ('RESOURCE_INVESTIGAROR', 'Исследователь ресурсов'),
+                ('SPECIALIST', 'Специалист'),
+            ],
+            verbose_name="Роль по Белбину"
+    )
 
     class Meta:
         db_table  = 'employees'
