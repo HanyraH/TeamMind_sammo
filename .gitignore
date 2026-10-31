@@ -58,3 +58,4 @@ htmlcov/
 .pytest_cache/
 test-results/
 playwright-report/
+backend/db.sqlite3
