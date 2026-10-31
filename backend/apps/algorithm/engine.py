@@ -16,13 +16,68 @@ DEFAULT_WEIGHTS = {
     'C': 0.10   # Совместимость с коллегами (Colleague Compatibility)
 }
 
+# Пресеты динамической калибровки весов под различные бизнес-сценарии
+PRESET_PROFILES = {
+    "BALANCED": {
+        "name": "Сбалансированный (Стандарт ТЗ §6.8)",
+        "description": "Оптимальный баланс всех критериев для плановых проектов",
+        "weights": {'K': 0.35, 'A': 0.25, 'L': 0.20, 'T': 0.10, 'C': 0.10}
+    },
+    "CRUNCH": {
+        "name": "Аврал / Горящий релиз (Crunch Mode)",
+        "description": "Максимизация навыков и доступности для критических сроков",
+        "weights": {'K': 0.50, 'A': 0.35, 'L': 0.05, 'T': 0.05, 'C': 0.05}
+    },
+    "MENTORSHIP": {
+        "name": "Обучение и менторство (Growth & Mentorship)",
+        "description": "Сниженный упор на опыт в пользу роста мидлов и джунов под менторством",
+        "weights": {'K': 0.25, 'A': 0.20, 'L': 0.25, 'T': 0.10, 'C': 0.20}
+    },
+    "FAST_PACE": {
+        "name": "Быстрый старт (Минимальная загрузка)",
+        "description": "Приоритет сотрудникам с максимальным запасом свободного времени",
+        "weights": {'K': 0.20, 'A': 0.30, 'L': 0.40, 'T': 0.05, 'C': 0.05}
+    },
+    "DISTRIBUTED_SYNC": {
+        "name": "Распределенная команда (Синхронность)",
+        "description": "Максимальное пересечение рабочих окон и совпадение хронотипов",
+        "weights": {'K': 0.30, 'A': 0.20, 'L': 0.10, 'T': 0.30, 'C': 0.10}
+    }
+}
+
 class TeamMatchingEngine:
-    def __init__(self, weights: Optional[Dict[str, float]] = None):
-        self.weights = weights or dict(DEFAULT_WEIGHTS)
+    def __init__(self, weights: Optional[Dict[str, float]] = None, preset: Optional[str] = None):
+        if preset and preset.upper() in PRESET_PROFILES:
+            self.current_preset = preset.upper()
+            self.weights = dict(PRESET_PROFILES[self.current_preset]["weights"])
+        else:
+            self.current_preset = "CUSTOM" if weights else "BALANCED"
+            self.weights = weights or dict(DEFAULT_WEIGHTS)
+
         # Нормализация весов если сумма != 1.0
         total_w = sum(self.weights.values())
         if total_w > 0:
             self.weights = {k: v / total_w for k, v in self.weights.items()}
+
+    def apply_preset(self, preset_name: str) -> Dict[str, float]:
+        """Применение одного из готовых пресетов калибровки весов."""
+        preset_key = preset_name.upper()
+        if preset_key in PRESET_PROFILES:
+            self.current_preset = preset_key
+            self.weights = dict(PRESET_PROFILES[preset_key]["weights"])
+            total_w = sum(self.weights.values())
+            if total_w > 0:
+                self.weights = {k: v / total_w for k, v in self.weights.items()}
+            return self.weights
+        raise ValueError(f"Неизвестный пресет '{preset_name}'. Доступны: {list(PRESET_PROFILES.keys())}")
+
+    @classmethod
+    def list_presets(cls) -> List[Dict[str, Any]]:
+        """Возвращает список доступных пресетов с описанием."""
+        return [
+            {"preset_key": k, **v}
+            for k, v in PRESET_PROFILES.items()
+        ]
 
     def filter_hard_constraints(
         self,
@@ -129,7 +184,7 @@ class TeamMatchingEngine:
         }
         t_score = chrono_compat_matrix.get((cand_chrono, target_chrono), 80.0)
 
-        # --- C: Colleague Compatibility [0..100] ---
+        # --- C: Colleague Compatibility & Belbin Role Synergy [0..100] ---
         c_score = 80.0
         if team_context:
             pref_colleagues = set(candidate.get('preferred_colleagues', []))
@@ -139,6 +194,17 @@ class TeamMatchingEngine:
             bonus = len(pref_colleagues & team_ids) * 10.0
             penalty = len(disliked_colleagues & team_ids) * 25.0
             c_score = max(20.0, min(100.0, c_score + bonus - penalty))
+
+            # Ролевая синергия по Белбину (Action / People / Thought)
+            cand_belbin = candidate.get('belbin_role', 'SPECIALIST')
+            team_belbin_roles = [m.get('belbin_role', 'SPECIALIST') for m in team_context]
+            
+            # Штраф за дублирование доминантных ролей (два Shaper вызывают конфликт)
+            if cand_belbin in ['SHAPER', 'COORDINATOR'] and cand_belbin in team_belbin_roles:
+                c_score = max(20.0, c_score - 12.0)
+            # Бонус за привносимый новый психотип в команду
+            elif cand_belbin not in team_belbin_roles:
+                c_score = min(100.0, c_score + 6.0)
         else:
             c_score = float(candidate.get('compatibility_rating', 80.0))
 
@@ -218,12 +284,14 @@ class TeamMatchingEngine:
         candidates: List[Dict[str, Any]],
         role_requirements: List[Dict[str, Any]],
         generations: int = 40,
-        population_size: int = 16
-    ) -> List[Dict[str, Any]]:
+        population_size: int = 16,
+        return_convergence: bool = False
+    ) -> Any:
         """
-        Генетический алгоритм подбора оптимальной команды.
-        Хромосома: вектор назначений кандидатов по ролевым слотам.
-        Операторы: скрещивание (crossover), мутация (mutation), селекция (elitism).
+        Оптимизированный генетический алгоритм подбора команды (ТЗ §6.8).
+        - Бесконфликтный оператор скрещивания (Order-Based Crossover / OX) без дублирования кандидатов.
+        - Адаптивное охлаждение мутации (Simulated Annealing: от 0.40 до 0.05).
+        - Трекинг сходимости поколений (Convergence history).
         """
         # Сформируем список требуемых слотов
         slots = []
@@ -232,7 +300,8 @@ class TeamMatchingEngine:
                 slots.append(r_req)
 
         if not slots or not candidates:
-            return self.run_greedy(candidates, role_requirements)
+            res = self.run_greedy(candidates, role_requirements)
+            return (res, []) if return_convergence else res
 
         # Кандидаты, удовлетворяющие базовым фильтрам
         valid_candidates = [c for c in candidates if c.get('is_active', True) and c.get('status') != 'FIRED']
@@ -248,13 +317,46 @@ class TeamMatchingEngine:
             for i, member in enumerate(team):
                 m_id = member.get('id')
                 if m_id in seen_ids:
-                    dup_penalty += 35.0
+                    dup_penalty += 40.0
                 seen_ids.add(m_id)
                 r_req = slots[min(i, len(slots) - 1)]
                 res = self.calculate_score(member, r_req, team_context=team)
                 total += res['total_score']
             avg = total / len(team)
             return max(0.0, avg - dup_penalty)
+
+        # Конфликт-фри кроссовер (Order Crossover / OX)
+        def order_crossover(p1: List[Dict[str, Any]], p2: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            n = len(slots)
+            if n <= 1:
+                return list(p1)
+            
+            idx1, idx2 = sorted(random.sample(range(n), 2))
+            child = [None] * n
+            used_ids = set()
+
+            # Копируем сегмент из Parent 1
+            for i in range(idx1, idx2 + 1):
+                child[i] = p1[i]
+                used_ids.add(p1[i].get('id'))
+
+            # Заполняем остальные слоты генами из Parent 2, сохраняя порядок
+            p2_filtered = [c for c in p2 if c.get('id') not in used_ids]
+            p2_idx = 0
+            for i in range(n):
+                if child[i] is None:
+                    if p2_idx < len(p2_filtered):
+                        candidate = p2_filtered[p2_idx]
+                        p2_idx += 1
+                    else:
+                        avail = [c for c in valid_candidates if c.get('id') not in used_ids]
+                        candidate = random.choice(avail) if avail else random.choice(valid_candidates)
+                    
+                    r_title = slots[i].get('role_title', 'Member')
+                    child[i] = {**candidate, 'role_assigned': r_title}
+                    used_ids.add(candidate.get('id'))
+
+            return child
 
         # Начальная популяция (жадное решение + случайные вариации)
         population = []
@@ -270,26 +372,40 @@ class TeamMatchingEngine:
                 rand_team.append({**c, 'role_assigned': r_title})
             population.append(rand_team)
 
-        # Эволюционный цикл
+        convergence_history = []
+
+        # Эволюционный цикл с адаптивным отжигом (Simulated Annealing)
         for gen in range(generations):
             scored_pop = [(evaluate_team(t), t) for t in population]
             scored_pop.sort(key=lambda x: x[0], reverse=True)
 
+            best_fit = round(scored_pop[0][0], 2)
+            avg_fit = round(sum(s for s, _ in scored_pop) / len(scored_pop), 2)
+            convergence_history.append({
+                "generation": gen + 1,
+                "best_fitness": best_fit,
+                "avg_fitness": avg_fit
+            })
+
             # Элитизм: берем топ-4
             new_pop = [t for _, t in scored_pop[:4]]
+
+            # Адаптивное охлаждение мутации: от 0.40 до 0.05
+            adaptive_mutation_rate = max(0.05, 0.40 * (1.0 - (gen / max(1, generations))))
 
             while len(new_pop) < population_size:
                 p1 = random.choice(scored_pop[:8])[1]
                 p2 = random.choice(scored_pop[:8])[1]
 
-                # Кроссовер (одноточечный обмен ролями)
-                split = random.randint(1, max(1, len(slots) - 1))
-                child = p1[:split] + p2[split:]
+                # Применяем Order Crossover (OX)
+                child = order_crossover(p1, p2)
 
-                # Мутация (15% шанс случайной замены кандидата)
-                if random.random() < 0.25:
+                # Мутация с выбором неиспользованного кандидата
+                if random.random() < adaptive_mutation_rate:
                     mutate_idx = random.randint(0, len(child) - 1)
-                    new_cand = random.choice(valid_candidates)
+                    current_ids = {m.get('id') for m in child}
+                    pool = [c for c in valid_candidates if c.get('id') not in current_ids]
+                    new_cand = random.choice(pool) if pool else random.choice(valid_candidates)
                     r_title = slots[mutate_idx].get('role_title', 'Member')
                     child[mutate_idx] = {**new_cand, 'role_assigned': r_title}
 
@@ -301,6 +417,8 @@ class TeamMatchingEngine:
         final_scored = [(evaluate_team(t), t) for t in population]
         final_scored.sort(key=lambda x: x[0], reverse=True)
         best_team = final_scored[0][1]
+
+        self.last_convergence_history = convergence_history
 
         # Обогащаем результат скорами
         enriched_team = []
@@ -314,7 +432,329 @@ class TeamMatchingEngine:
                 'score_breakdown': score_res
             })
 
+        if return_convergence:
+            return enriched_team, convergence_history
+
         return enriched_team
+
+    def analyze_belbin_balance(self, team: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Анализ командных ролей по модели доктора Мередита Белбина (Belbin Team Roles).
+        Группировка ролей по 3 кластерам:
+        1. Action (Действие): SHAPER, IMPLEMENTER, COMPLETER_FINISHER
+        2. People (Люди): COORDINATOR, TEAMWORKER, RESOURCE_INVESTIGATOR
+        3. Thought (Мышление): PLANT, MONITOR_EVALUATOR, SPECIALIST
+        """
+        role_clusters = {
+            "ACTION": {"SHAPER", "IMPLEMENTER", "COMPLETER_FINISHER"},
+            "PEOPLE": {"COORDINATOR", "TEAMWORKER", "RESOURCE_INVESTIGATOR"},
+            "THOUGHT": {"PLANT", "MONITOR_EVALUATOR", "SPECIALIST"}
+        }
+
+        cluster_counts = {"ACTION": 0, "PEOPLE": 0, "THOUGHT": 0}
+        assigned_roles = []
+
+        for m in team:
+            role = str(m.get('belbin_role', 'SPECIALIST')).upper()
+            assigned_roles.append({"member_id": m.get('id'), "name": m.get('name'), "role": role})
+            for cluster, roles in role_clusters.items():
+                if role in roles:
+                    cluster_counts[cluster] += 1
+                    break
+            else:
+                cluster_counts["THOUGHT"] += 1
+
+        total_members = len(team)
+        covered_clusters = sum(1 for c in cluster_counts.values() if c > 0)
+
+        if total_members == 0:
+            balance_score = 0.0
+        elif covered_clusters == 3:
+            balance_score = 95.0
+        elif covered_clusters == 2:
+            balance_score = 75.0
+        else:
+            balance_score = 50.0
+
+        shaper_count = sum(1 for r in assigned_roles if r["role"] == "SHAPER")
+        conflicts = []
+        if shaper_count > 1:
+            conflicts.append(f"Конфликт лидерства: {shaper_count} сотрудника с ролью SHAPER (Мотиватор). Высокий риск борьбы за влияние.")
+
+        missing_clusters = [k for k, v in cluster_counts.items() if v == 0]
+        advice = []
+        if "ACTION" in missing_clusters:
+            advice.append("Нехватка роли 'Действие' (Implementer/Shaper): риск затягивания реализации задач.")
+        if "PEOPLE" in missing_clusters:
+            advice.append("Нехватка роли 'Люди' (Coordinator/Teamworker): риск коммуникационных барьеров.")
+        if "THOUGHT" in missing_clusters:
+            advice.append("Нехватка роли 'Мышление' (Plant/Specialist): риск шаблонных решений.")
+        if not advice and not conflicts:
+            advice.append("Командные роли гармонично распределены по всем 3 кластерам Белбина.")
+
+        return {
+            "balance_score": balance_score,
+            "clusters": cluster_counts,
+            "assigned_roles": assigned_roles,
+            "conflicts": conflicts,
+            "advice": advice
+        }
+
+    def analyze_team_risks(
+        self,
+        team: List[Dict[str, Any]],
+        role_requirements: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Комплексный анализ рисков команды (ТЗ §6.8):
+        1. Анализ Bus Factor (уязвимость к потере ключевого носителя навыка / Single Point of Failure).
+        2. Индекс выгорания (Burnout Risk) и дисбаланс нагрузки.
+        3. Коэффициент устойчивости команды (Resilience Score, 0..100).
+        4. Автоматические рекомендации по кросс-обучению и менторству.
+        """
+        if not team:
+            return {
+                "resilience_score": 0.0,
+                "overall_risk_level": "HIGH",
+                "bus_factor": 0,
+                "critical_skills_at_risk": [],
+                "burnout_risk": {"risk_level": "LOW", "high_load_members": []},
+                "recommendations": ["Команда пуста. Требуется назначение участников."]
+            }
+
+        # 1. Bus Factor Analysis (Single Point of Failure)
+        req_skills_map: Dict[str, int] = {}
+        if role_requirements:
+            for req in role_requirements:
+                for skill_name, min_lvl in req.get('required_skills', {}).items():
+                    req_skills_map[skill_name] = max(req_skills_map.get(skill_name, 0), int(min_lvl))
+
+        # Карта навыков участников команды
+        skill_coverage: Dict[str, List[Dict[str, Any]]] = {}
+        for member in team:
+            m_skills = member.get('skills_dict', {})
+            for s_name, s_lvl in m_skills.items():
+                if s_name not in skill_coverage:
+                    skill_coverage[s_name] = []
+                skill_coverage[s_name].append({
+                    "id": member.get('id'),
+                    "name": member.get('name', f"Employee #{member.get('id')}"),
+                    "level": int(s_lvl)
+                })
+
+        critical_skills_at_risk = []
+        min_bus_factor = 999
+        skills_to_check = req_skills_map if req_skills_map else {s: 3 for s in skill_coverage.keys()}
+
+        for s_name, min_lvl in skills_to_check.items():
+            capable_members = [
+                m for m in skill_coverage.get(s_name, [])
+                if m["level"] >= min_lvl
+            ]
+            carriers_count = len(capable_members)
+            min_bus_factor = min(min_bus_factor, carriers_count)
+
+            if carriers_count == 0:
+                critical_skills_at_risk.append({
+                    "skill": s_name,
+                    "bus_factor": 0,
+                    "status": "UNCOVERED",
+                    "description": f"Навык '{s_name}' (требуемый уровень {min_lvl}) не закрыт ни одним участником!"
+                })
+            elif carriers_count == 1:
+                critical_skills_at_risk.append({
+                    "skill": s_name,
+                    "bus_factor": 1,
+                    "status": "CRITICAL_SPOF",
+                    "sole_carrier": capable_members[0]["name"],
+                    "sole_carrier_level": capable_members[0]["level"],
+                    "description": f"Уязвимость Bus Factor = 1: только {capable_members[0]['name']} владеет навыком '{s_name}' на уровне {capable_members[0]['level']}."
+                })
+
+        if min_bus_factor == 999:
+            min_bus_factor = 1
+
+        # 2. Burnout Risk & Load Imbalance
+        high_load_members = []
+        total_loads = []
+        for member in team:
+            b_down = member.get('score_breakdown', {})
+            proj_load = b_down.get('projected_load', float(member.get('current_load_percent', 50.0)))
+            total_loads.append(proj_load)
+            m_name = member.get('name', f"Employee #{member.get('id')}")
+            if proj_load >= 90.0:
+                high_load_members.append({
+                    "name": m_name,
+                    "load_percent": proj_load,
+                    "severity": "CRITICAL"
+                })
+            elif proj_load >= 80.0:
+                high_load_members.append({
+                    "name": m_name,
+                    "load_percent": proj_load,
+                    "severity": "ELEVATED"
+                })
+
+        avg_load = sum(total_loads) / len(total_loads) if total_loads else 0.0
+        load_variance = sum((x - avg_load) ** 2 for x in total_loads) / len(total_loads) if total_loads else 0.0
+        load_std_dev = load_variance ** 0.5
+
+        # 3. Resilience Score (0..100)
+        resilience = 100.0
+        uncovered_cnt = sum(1 for s in critical_skills_at_risk if s.get('status') == 'UNCOVERED')
+        spof_cnt = sum(1 for s in critical_skills_at_risk if s.get('status') == 'CRITICAL_SPOF')
+        resilience -= uncovered_cnt * 30.0
+        resilience -= spof_cnt * 12.0
+
+        for h in high_load_members:
+            if h["severity"] == "CRITICAL":
+                resilience -= 15.0
+            else:
+                resilience -= 5.0
+
+        if load_std_dev > 25.0:
+            resilience -= 10.0
+
+        resilience = round(max(0.0, min(100.0, resilience)), 1)
+
+        if resilience >= 80.0:
+            overall_risk = "LOW"
+        elif resilience >= 60.0:
+            overall_risk = "MEDIUM"
+        elif resilience >= 40.0:
+            overall_risk = "HIGH"
+        else:
+            overall_risk = "CRITICAL"
+
+        # 4. Рекомендации по оптимизации
+        recommendations = []
+        if uncovered_cnt > 0:
+            recommendations.append(f"Критично: добавьте в команду носителей {uncovered_cnt} недостающих навыков.")
+        if spof_cnt > 0:
+            recommendations.append(f"Риск потери кадров (Bus Factor=1) по {spof_cnt} компетенциям. Организуйте кросс-ревью и парное менторство.")
+        # 4. Анализ психологических ролей по Белбину
+        belbin_balance = self.analyze_belbin_balance(team)
+        if belbin_balance["conflicts"]:
+            recommendations.extend(belbin_balance["conflicts"])
+
+        return {
+            "resilience_score": resilience,
+            "overall_risk_level": overall_risk,
+            "bus_factor": min_bus_factor,
+            "critical_skills_at_risk": critical_skills_at_risk,
+            "burnout_risk": {
+                "risk_level": "HIGH" if any(h["severity"] == "CRITICAL" for h in high_load_members) else ("MEDIUM" if high_load_members else "LOW"),
+                "avg_load_percent": round(avg_load, 1),
+                "load_std_dev": round(load_std_dev, 1),
+                "high_load_members": high_load_members
+            },
+            "belbin_balance": belbin_balance,
+            "recommendations": recommendations
+        }
+
+    def simulate_monte_carlo_risks(
+        self,
+        team: List[Dict[str, Any]],
+        role_requirements: Optional[List[Dict[str, Any]]] = None,
+        iterations: int = 500
+    ) -> Dict[str, Any]:
+        """
+        Монте-Карло стресс-тестирование устойчивости команды (ТЗ §6.8).
+        Моделирует 500 случайных операционных сценариев реализации проекта:
+        - Внезапные больничные и отпуска (зависят от текущей нагрузки сотрудника).
+        - Риск ухода единственного носителя ключевого навыка (Bus Factor = 1).
+        - Внезапное расширение скоупа задач (Scope Creep, +20%).
+        Возвращает вероятность успешного завершения проекта (Success Probability).
+        """
+        if not team:
+            return {
+                "success_probability": 0.0,
+                "project_completion_rate": 0.0,
+                "iterations_run": iterations,
+                "failure_breakdown_percent": {"EMPTY_TEAM": 100.0},
+                "risk_profile": "CRITICAL",
+                "summary": "Команда пуста. Моделирование невозможно."
+            }
+
+        # Базовый анализ навыков и Bus Factor
+        risk_base = self.analyze_team_risks(team, role_requirements)
+        spof_skills = {item["skill"] for item in risk_base["critical_skills_at_risk"] if item["status"] == "CRITICAL_SPOF"}
+        uncovered_skills = {item["skill"] for item in risk_base["critical_skills_at_risk"] if item["status"] == "UNCOVERED"}
+
+        success_count = 0
+        failure_causes = {
+            "CRITICAL_SKILL_LOSS": 0,
+            "BURNOUT_CASCADE": 0,
+            "CAPACITY_EXHAUSTION": 0,
+            "UNCOVERED_SKILLS": 0
+        }
+
+        initial_uncovered_penalty = len(uncovered_skills) * 0.15 if uncovered_skills else 0.0
+
+        for _ in range(iterations):
+            # 1. Симуляция уходов на больничный
+            active_team = []
+            spof_carrier_absent = False
+
+            for m in team:
+                load = float(m.get("score_breakdown", {}).get("projected_load", m.get("current_load_percent", 50.0)))
+                p_absence = 0.04 + (max(0.0, load - 75.0) / 100.0) * 0.25
+
+                if random.random() < p_absence:
+                    m_skills = m.get("skills_dict", {})
+                    if any(s in spof_skills and m_skills.get(s, 0) >= 3 for s in m_skills):
+                        spof_carrier_absent = True
+                else:
+                    active_team.append(m)
+
+            # Проверка условий срыва проекта
+            if initial_uncovered_penalty > 0 and random.random() < initial_uncovered_penalty:
+                failure_causes["UNCOVERED_SKILLS"] += 1
+                continue
+
+            if spof_carrier_absent and random.random() < 0.70:
+                failure_causes["CRITICAL_SKILL_LOSS"] += 1
+                continue
+
+            if len(active_team) < len(team) * 0.65:
+                failure_causes["CAPACITY_EXHAUSTION"] += 1
+                continue
+
+            scope_creep = random.random() < 0.25
+            avg_active_load = sum(
+                float(m.get("current_load_percent", 50.0)) for m in active_team
+            ) / max(1, len(active_team))
+
+            if scope_creep and avg_active_load > 85.0:
+                failure_causes["BURNOUT_CASCADE"] += 1
+                continue
+
+            success_count += 1
+
+        success_prob = round((success_count / iterations) * 100.0, 1)
+
+        if success_prob >= 85.0:
+            profile = "STABLE"
+        elif success_prob >= 70.0:
+            profile = "MODERATE_RISK"
+        elif success_prob >= 50.0:
+            profile = "HIGH_RISK"
+        else:
+            profile = "CRITICAL_FRAGILITY"
+
+        pct_causes = {
+            k: round((v / iterations) * 100.0, 1)
+            for k, v in failure_causes.items() if v > 0
+        }
+
+        return {
+            "success_probability": success_prob,
+            "project_completion_rate": success_prob,
+            "iterations_run": iterations,
+            "risk_profile": profile,
+            "failure_breakdown_percent": pct_causes,
+            "summary": f"Монте-Карло симуляция ({iterations} итераций): вероятность сдачи проекта в срок {success_prob}%. Профиль надежности: {profile}."
+        }
 
     def generate_all_variants(
         self,
@@ -375,8 +815,9 @@ class TeamMatchingEngine:
 
         variants = []
         for st in strategies[:max(3, min(5, count))]:
+            conv = []
             if st["algo"] == "GENETIC":
-                members = self.run_genetic(candidates, role_requirements)
+                members, conv = self.run_genetic(candidates, role_requirements, return_convergence=True)
             else:
                 members = self.run_greedy(candidates, role_requirements, weights_override=st["weights"])
 
@@ -388,12 +829,8 @@ class TeamMatchingEngine:
             avg_avail = round(sum(m.get('score_breakdown', {}).get('a_score', 90.0) for m in members) / len(members), 1)
             avg_load = round(sum(m.get('score_breakdown', {}).get('projected_load', 75.0) for m in members) / len(members), 1)
 
-            # Оценка рисков по ТЗ §6.8
-            risk = "LOW"
-            if avg_load > 85.0 or avg_skills < 75.0:
-                risk = "HIGH"
-            elif avg_load > 80.0 or avg_skills < 85.0:
-                risk = "MEDIUM"
+            # Комплексный анализ рисков и устойчивости команды (Bus Factor & Burnout)
+            risk_analysis = self.analyze_team_risks(members, role_requirements)
 
             variants.append({
                 "variant_id": st["id"],
@@ -403,9 +840,13 @@ class TeamMatchingEngine:
                 "skills_coverage": avg_skills,
                 "avg_availability": avg_avail,
                 "avg_load": avg_load,
-                "risk_level": risk,
+                "risk_level": risk_analysis["overall_risk_level"],
+                "resilience_score": risk_analysis["resilience_score"],
+                "bus_factor": risk_analysis["bus_factor"],
+                "risk_details": risk_analysis,
+                "convergence_history": conv,
                 "members": members,
-                "explanation": f"Вариант сформирован по стратегии '{st['name']}'. Покрытие навыков: {avg_skills}%, средняя планируемая загрузка: {avg_load}%. Риск перегрузок: {risk}."
+                "explanation": f"Вариант сформирован по стратегии '{st['name']}'. Покрытие навыков: {avg_skills}%, средняя планируемая загрузка: {avg_load}%. Устойчивость команды: {risk_analysis['resilience_score']}% (Bus Factor = {risk_analysis['bus_factor']})."
             })
 
         return variants
@@ -448,11 +889,18 @@ class TeamMatchingEngine:
         # Покрытие навыков
         new_k_avg = round(sum(m.get('score_breakdown', {}).get('k_score', 85.0) for m in filtered_team) / max(1, len(filtered_team)), 1)
         
-        risk = "Низкий риск: ключевые роли закрыты сбалансированно"
-        if new_k_avg < 75.0:
-            risk = "Повышенный риск: нехватка покрытия ключевых навыков"
+        # Комплексный анализ рисков, Bus Factor и Монте-Карло стресс-тест
+        risk_data = self.analyze_team_risks(filtered_team)
+        monte_carlo = self.simulate_monte_carlo_risks(filtered_team, iterations=300)
+
+        risk = f"Устойчивость: {risk_data['resilience_score']}%, Bus-Factor: {risk_data['bus_factor']} ({risk_data['overall_risk_level']})"
+        risk += f" | Вероятность успеха (Монте-Карло): {monte_carlo['success_probability']}%"
+        if risk_data['critical_skills_at_risk']:
+            risk += f" | {risk_data['critical_skills_at_risk'][0]['description']}"
         elif delta < -5.0:
-            risk = "Умеренный риск: интегральный скор команды снизился"
+            risk += " | Умеренный риск: интегральный скор снизился"
+        elif new_k_avg >= 85.0 and delta >= 0:
+            risk += " | Отличная замена: компетенции команды сбалансированы"
 
         return {
             "updated_team": filtered_team,
@@ -460,6 +908,10 @@ class TeamMatchingEngine:
             "skills_coverage": new_k_avg,
             "delta": delta,
             "risk_assessment": risk,
+            "resilience_score": risk_data["resilience_score"],
+            "bus_factor": risk_data["bus_factor"],
+            "risk_details": risk_data,
+            "monte_carlo_stress_test": monte_carlo,
             "replaced_member": old_member,
             "new_member": updated_member
         }

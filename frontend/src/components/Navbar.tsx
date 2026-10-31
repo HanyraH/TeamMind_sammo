@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Bell, Plus, Globe, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getEmployees, getProjects, EmployeeItem, ProjectItem } from '../api/client';
@@ -217,7 +218,26 @@ export const Navbar: React.FC<NavbarProps> = ({ title = 'Панель управ
 
         <button onClick={toggleLanguage} title={language === 'ru' ? 'Switch to English' : 'Переключить на русский'} className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-white px-2 py-1.5 rounded-lg hover:bg-slate-800/60 transition-colors"><Globe className="w-3.5 h-3.5" /><span>{language.toUpperCase()}</span></button>
       </div>
-      {selectedNotification && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={() => setSelectedNotification(null)}><div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-4"><h2 className="text-lg font-bold text-white">{selectedNotification.title}</h2><button onClick={() => setSelectedNotification(null)} className="text-slate-400 hover:text-white" aria-label="Close">×</button></div><p className="mt-4 text-sm leading-6 text-slate-300">{selectedNotification.description}</p><div className="mt-4 text-xs text-slate-500">{selectedNotification.time}</div><button onClick={() => setSelectedNotification(null)} className="mt-6 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white">{language === 'ru' ? 'Закрыть' : 'Close'}</button></div></div>}
+
+      {/* Модальное окно уведомления вынесено в Portal и спозиционировано слева от выпадающего списка */}
+      {selectedNotification && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-start justify-end bg-black/40 pt-20 pr-4 md:pr-[480px]" onClick={() => setSelectedNotification(null)}>
+          <div className="w-96 rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl animate-in fade-in duration-150" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-base font-bold text-white">{selectedNotification.title}</h2>
+              <button onClick={() => setSelectedNotification(null)} className="text-slate-400 hover:text-white text-lg leading-none mt-0.5" aria-label="Close">×</button>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-300">{selectedNotification.description}</p>
+            <div className="mt-4 text-[11px] text-slate-500">{selectedNotification.time}</div>
+            <div className="mt-5 flex justify-end">
+              <button onClick={() => setSelectedNotification(null)} className="rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-1.5 text-xs text-white font-medium transition-colors">
+                {language === 'ru' ? 'Закрыть' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </header>
   );
 };

@@ -50,8 +50,97 @@ def run_demo():
     new_cand = {"id": 20, "name": "New Lead", "current_load_percent": 50.0, "skills_dict": {"Python": 5}}
     what_if = engine.what_if_swap(team, old_member_id=10, new_candidate=new_cand)
     print(f"   -> Score delta: {what_if['delta']:+.1f}% | Risk: {what_if['risk_assessment']}")
+    print(f"   -> Resilience Score: {what_if['resilience_score']}% | Bus-Factor: {what_if['bus_factor']}")
+
+    # 5. Team Resilience & Bus-Factor Risk Analysis
+    print("5. Team Resilience & Bus-Factor Risk Analysis (TZ §6.8):")
+    sample_team = [
+        {"id": 101, "name": "Senior Python Lead", "current_load_percent": 92.0, "skills_dict": {"Python": 5, "Architecture": 5}},
+        {"id": 102, "name": "Junior Frontend", "current_load_percent": 40.0, "skills_dict": {"React": 3, "CSS": 4}},
+        {"id": 103, "name": "DevOps Engineer", "current_load_percent": 82.0, "skills_dict": {"Docker": 4, "Kubernetes": 4}}
+    ]
+    project_roles = [
+        {"role_title": "Backend Lead", "required_skills": {"Python": 4, "Architecture": 4}},
+        {"role_title": "Frontend", "required_skills": {"React": 3}},
+        {"role_title": "DevOps", "required_skills": {"Kubernetes": 4, "Security": 3}}
+    ]
+    risks = engine.analyze_team_risks(sample_team, project_roles)
+    print(f"   -> Team Resilience Score: {risks['resilience_score']}% (Risk Level: {risks['overall_risk_level']})")
+    print(f"   -> Team Bus Factor: {risks['bus_factor']}")
+    print(f"   -> Burnout Risk Level: {risks['burnout_risk']['risk_level']} (High-load members: {len(risks['burnout_risk']['high_load_members'])})")
+    print("   -> Critical Skills & Single Points of Failure (SPOF):")
+    for item in risks['critical_skills_at_risk']:
+        print(f"      * [{item['status']}] {item['description']}")
+    print("   -> Mitigation Recommendations:")
+    for rec in risks['recommendations']:
+        print(f"      * {rec}")
+
+    assert risks['resilience_score'] > 0, "Resilience score should be calculated"
+    assert len(risks['critical_skills_at_risk']) >= 2, "Should identify uncovered Security and SPOF for Architecture/Kubernetes"
+
+    # 6. Advanced Genetic Algorithm with Order Crossover (OX) & Simulated Annealing
+    print("6. Genetic Solver (Order Crossover & Annealing Convergence):")
+    candidates_pool = [
+        {"id": i, "name": f"Candidate {i}", "is_active": True, "status": "ACTIVE",
+         "availability_percent": 100.0, "current_load_percent": 50.0 + (i % 20),
+         "chronotype": "DAY", "skills_dict": {"Python": (i % 5) + 1, "Django": ((i + 2) % 5) + 1}}
+        for i in range(1, 25)
+    ]
+    roles_req = [
+        {"role_title": "Lead", "required_skills": {"Python": 5}, "headcount": 1},
+        {"role_title": "Senior Dev", "required_skills": {"Python": 4, "Django": 4}, "headcount": 2},
+        {"role_title": "Junior Dev", "required_skills": {"Python": 2}, "headcount": 1}
+    ]
+    gen_team, history = engine.run_genetic(candidates_pool, roles_req, generations=20, return_convergence=True)
+    team_ids = [m["id"] for m in gen_team]
+    print(f"   -> Team assembled: {len(gen_team)} members (Unique IDs: {len(set(team_ids))} of {len(team_ids)})")
+    assert len(team_ids) == len(set(team_ids)), "OX Crossover must guarantee duplicate-free assignments!"
+    print(f"   -> Convergence recorded: {len(history)} generations (Gen 1 best: {history[0]['best_fitness']} -> Gen {len(history)} best: {history[-1]['best_fitness']})")
+    assert history[-1]['best_fitness'] >= history[0]['best_fitness'], "Genetic solver must converge or maintain fitness!"
+
+    # 7. Monte Carlo Operational Risk & Stress-Testing Simulator
+    print("7. Monte Carlo Operational Risk & Stress-Testing Simulator (TZ §6.8):")
+    mc_res = engine.simulate_monte_carlo_risks(sample_team, project_roles, iterations=300)
+    print(f"   -> Success Probability: {mc_res['success_probability']}% (Risk Profile: {mc_res['risk_profile']})")
+    print(f"   -> Failure Causes: {mc_res['failure_breakdown_percent']}")
+    print(f"   -> Summary: {mc_res['summary']}")
+    assert mc_res['iterations_run'] == 300, "Should execute 300 Monte Carlo iterations"
+
+    # 8. Belbin Team Roles & Cognitive Diversity Balance
+    print("8. Belbin Team Roles & Cognitive Diversity Balance (TZ §6.8):")
+    belbin_team = [
+        {"id": 1, "name": "Alice Leader", "belbin_role": "COORDINATOR"},
+        {"id": 2, "name": "Bob Builder", "belbin_role": "IMPLEMENTER"},
+        {"id": 3, "name": "Charlie Thinker", "belbin_role": "PLANT"}
+    ]
+    b_res = engine.analyze_belbin_balance(belbin_team)
+    print(f"   -> Belbin Balance Score: {b_res['balance_score']}% (Clusters: {b_res['clusters']})")
+    print(f"   -> Advice: {b_res['advice']}")
+    assert b_res['balance_score'] >= 90.0, "Balanced team covering 3 clusters should have high score"
+
+    # 9. Dynamic Strategy Weight Presets (Crunch, Mentorship, etc.)
+    print("9. Dynamic Strategy Weight Presets (TZ §6.8):")
+    presets = engine.list_presets()
+    print(f"   -> Available presets: {[p['preset_key'] for p in presets]}")
+    assert len(presets) >= 5, "Must provide at least 5 standard presets"
+    
+    # Apply Crunch preset
+    crunch_weights = engine.apply_preset("CRUNCH")
+    print(f"   -> Applied CRUNCH preset: K={crunch_weights['K']:.2f}, A={crunch_weights['A']:.2f}")
+    assert crunch_weights['K'] >= 0.45, "Crunch mode must prioritize skills match K"
+
+    # Apply Mentorship preset
+    mentor_weights = engine.apply_preset("MENTORSHIP")
+    print(f"   -> Applied MENTORSHIP preset: K={mentor_weights['K']:.2f}, L={mentor_weights['L']:.2f}, C={mentor_weights['C']:.2f}")
+    assert mentor_weights['C'] >= 0.15, "Mentorship mode must value compatibility and workload"
+
     print("=" * 65)
-    print("[SUCCESS] All Algorithm & Math modules (TZ 6.8) work correctly! OK\n")
+    print("[SUCCESS] All Algorithm, Presets, Genetic, Belbin & Risk modules (TZ 6.8) OK!\n")
 
 if __name__ == "__main__":
     run_demo()
+
+
+
+
+

@@ -30,6 +30,8 @@ export const Employees: React.FC = () => {
   const [newDept, setNewDept] = useState('Backend Core');
   const [newPosition, setNewPosition] = useState('Senior Backend Developer');
   const [newSkills, setNewSkills] = useState('Django, PostgreSQL, DRF');
+  const [newSkillLevel, setNewSkillLevel] = useState('3');
+  const [newBelbinRole, setNewBelbinRole] = useState('');
   const [newChronotype, setNewChronotype] = useState('INTERMEDIATE');
   const [newWorkFormat, setNewWorkFormat] = useState('OFFICE');
   const [newLoad, setNewLoad] = useState('65');
@@ -85,7 +87,8 @@ export const Employees: React.FC = () => {
         tab_number: newTabNumber || undefined,
         department: newDept,
         position: newPosition,
-        skills: newSkills.split(',').map(s => s.trim()).filter(Boolean),
+        skills: newSkills.split(',').map(s => s.trim()).filter(Boolean).map(name => ({ name, level: Number(newSkillLevel) })),
+        belbin_role: newBelbinRole || undefined,
         chronotype: newChronotype,
         work_format: newWorkFormat,
         load: Number(newLoad),
@@ -95,6 +98,9 @@ export const Employees: React.FC = () => {
       setNewFirstName('');
       setNewLastName('');
       setNewTabNumber('');
+      setNewSkills('Django, PostgreSQL, DRF');
+      setNewSkillLevel('3');
+      setNewBelbinRole('');
       fetchEmployeeList();
     } catch (err: any) {
       console.error('Failed to create employee:', err);
@@ -649,6 +655,26 @@ export const Employees: React.FC = () => {
             </div>
 
             <div className="text-xs">
+              <label className="text-slate-300 font-medium block mb-1">Роль по Белбину</label>
+              <select
+                value={newBelbinRole}
+                onChange={e => setNewBelbinRole(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white"
+              >
+                <option value="">Не выбрана</option>
+                <option value="Координатор">Координатор</option>
+                <option value="Реализатор">Реализатор</option>
+                <option value="Мотиватор (Shaper)">Мотиватор (Shaper)</option>
+                <option value="Генератор идей (Plant)">Генератор идей (Plant)</option>
+                <option value="Аналитик">Аналитик</option>
+                <option value="Педант">Педант</option>
+                <option value="Душа команды">Душа команды</option>
+                <option value="Исследователь ресурсов">Исследователь ресурсов</option>
+                <option value="Специалист">Специалист</option>
+              </select>
+            </div>
+
+            <div className="text-xs space-y-2">
               <label className="text-slate-300 font-medium block mb-1">Навыки (через запятую)</label>
               <input
                 type="text"
@@ -657,6 +683,18 @@ export const Employees: React.FC = () => {
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white"
                 placeholder="Python, React, TypeScript, Docker"
               />
+              <div className="flex items-center gap-3">
+                <label htmlFor="new-skill-level" className="text-slate-300">Уровень навыков (1–5)</label>
+                <select
+                  id="new-skill-level"
+                  value={newSkillLevel}
+                  onChange={e => setNewSkillLevel(e.target.value)}
+                  className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white"
+                >
+                  {[1, 2, 3, 4, 5].map(level => <option key={level} value={level}>{level}</option>)}
+                </select>
+                <span className="text-slate-500">Применяется к каждому введённому навыку</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3 text-xs">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  BarChart3, Download, TrendingUp, AlertTriangle, 
+import {
+  BarChart3, Download, TrendingUp, AlertTriangle,
   CheckCircle2, PieChart, Users, Clock, ShieldCheck
 } from 'lucide-react';
 import { getDashboardKpi, downloadAnalyticsReport, DashboardKpiData } from '../api/client';
@@ -42,6 +42,18 @@ export const Analytics: React.FC = () => {
   const overloadedPercent = Math.round((dist.overloaded / Math.max(1, totalEmps)) * 100);
   const underloadedPercent = Math.round((dist.underloaded / Math.max(1, totalEmps)) * 100);
 
+  const handleExport = () => {
+    const snapshot: DashboardKpiData = {
+      kpis: data?.kpis || [],
+      department_loads: data?.department_loads || [],
+      workload_distribution: dist,
+      chronotypes: chronos,
+    };
+    downloadAnalyticsReport(snapshot).catch((err) =>
+      console.error('Analytics export failed:', err)
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Bar */}
@@ -55,12 +67,12 @@ export const Analytics: React.FC = () => {
             Утилизация сотрудников, распределение хронотипов и выявление рисков перегрузок
           </p>
         </div>
-        <button 
-          onClick={downloadAnalyticsReport}
+        <button
+          onClick={handleExport}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-blue-500/20 transition-all shrink-0"
         >
           <Download className="w-4 h-4" />
-          <span>Скачать сводный отчёт (.xlsx)</span>
+          <span>Скачать сводный отчёт</span>
         </button>
       </div>
 
@@ -112,7 +124,7 @@ export const Analytics: React.FC = () => {
             <PieChart className="w-4 h-4 text-brand-sky" />
             Баланс нагрузки команды
           </h3>
-          
+
           <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-1">
             <div className="text-xs font-bold text-emerald-400 flex items-center justify-between">
               <span className="flex items-center gap-1.5">

@@ -2,27 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, Sliders, CheckCircle, RefreshCw, AlertCircle, 
   ArrowRightLeft, ShieldAlert, X, UserCheck, TrendingUp, TrendingDown,
-  Briefcase, Clock, Zap
+  Briefcase, Clock, Zap, Shield, Activity, AlertTriangle
 } from 'lucide-react';
 import { 
-  runTeamMatch, getWhatIfCandidates, runWhatIfSwap, getProjects, 
+  runTeamMatch, getWhatIfCandidates, runWhatIfSwap, getProjects, getAlgorithmPresets,
   ProjectItem, AlgoVariant, AlgoMember 
 } from '../api/client';
 
 export const TeamConstructor: React.FC = () => {
   // Weights according to TZ §6.8 formula: S = 0.35K + 0.25A + 0.20L + 0.10T + 0.10C
-  const [weightK, setWeightK] = useState(35); // Skills
-  const [weightA, setWeightA] = useState(25); // Availability
-  const [weightL, setWeightL] = useState(20); // Workload balance
-  const [weightT, setWeightT] = useState(10); // Timezone / Chronotype
-  const [weightC, setWeightC] = useState(10); // Compatibility
-  
+  const [weightK, setWeightK] = useState(35);
+  const [weightA, setWeightA] = useState(25);
+  const [weightL, setWeightL] = useState(20);
+  const [weightT, setWeightT] = useState(10);
+  const [weightC, setWeightC] = useState(10);
+
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [variants, setVariants] = useState<AlgoVariant[]>([]);
   const [selectedVariantId, setSelectedVariantId] = useState<number>(1);
   const [isCalculating, setIsCalculating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // ── 2.1 Пресеты стратегий подбора ──
+  const [presets, setPresets] = useState<Array<{ key: string; name: string; description: string }>>([]);
+  const [selectedPreset, setSelectedPreset] = useState<string>('BALANCED');
 
   // What-If interactive replacement state
   const [isWhatIfOpen, setIsWhatIfOpen] = useState(false);
@@ -38,42 +42,52 @@ export const TeamConstructor: React.FC = () => {
   }, []);
 
   const loadProjectsAndMatch = async () => {
+    // 2.1 — подтянуть список пресетов
+    try {
+      const list = await getAlgorithmPresets();
+      if (Array.isArray(list) && list.length > 0) {
+        setPresets(list);
+        setSelectedPreset(list[0].key);
+      }
+    } catch (err) {
+      console.warn('Failed to load presets, fallback to BALANCED', err);
+    }
+
     try {
       const prjList = await getProjects();
       setProjects(prjList);
       const initialPrjId = prjList.length > 0 ? prjList[0].id : '';
       setSelectedProjectId(initialPrjId);
-      await executeMatch(initialPrjId, 35, 25, 20, 10, 10);
+      await executeMatch(initialPrjId, 'BALANCED');
     } catch (err: any) {
       console.error('Failed to initialize projects:', err);
-      // Fallback fallback execution
-      await executeMatch('', 35, 25, 20, 10, 10);
+      await executeMatch('', 'BALANCED');
     }
   };
 
-  const executeMatch = async (
-    prjId: string, 
-    k: number, 
-    a: number, 
-    l: number, 
-    t: number, 
-    c: number
-  ) => {
+  const executeMatch = async (prjId: string, preset: string) => {
     setIsCalculating(true);
     setErrorMsg(null);
     try {
-      const totalW = (k + a + l + t + c) || 100;
-      const resp = await runTeamMatch({
+      const payload: Record<string, unknown> = {
         project_id: prjId || undefined,
-        weights: {
-          K: k / totalW,
-          A: a / totalW,
-          L: l / totalW,
-          T: t / totalW,
-          C: c / totalW,
-        },
-        count: 3
-      });
+        preset,
+        count: 3,
+      };
+
+      // Для пресета CUSTOM — отправляем ручные веса (сохранённое поведение слайдеров)
+      if (preset === 'CUSTOM') {
+        const totalW = (weightK + weightA + weightL + weightT + weightC) || 100;
+        payload.weights = {
+          K: weightK / totalW,
+          A: weightA / totalW,
+          L: weightL / totalW,
+          T: weightT / totalW,
+          C: weightC / totalW,
+        };
+      }
+
+      const resp = await runTeamMatch(payload as any);
 
       if (resp.variants && resp.variants.length > 0) {
         setVariants(resp.variants);
@@ -88,7 +102,7 @@ export const TeamConstructor: React.FC = () => {
   };
 
   const handleRunMatch = () => {
-    executeMatch(selectedProjectId, weightK, weightA, weightL, weightT, weightC);
+    executeMatch(selectedProjectId, selectedPreset);
   };
 
   // Open What-If Modal for a member
@@ -162,6 +176,17 @@ export const TeamConstructor: React.FC = () => {
   const activeVariant = variants.find(v => v.variant_id === selectedVariantId) || variants[0];
   const sumWeights = weightK + weightA + weightL + weightT + weightC;
 
+  // 2.4 — сохраняем активный вариант, чтобы Analytics.tsx мог его прочитать
+  useEffect(() => {
+    if (activeVariant) {
+      try {
+        localStorage.setItem('teammind-active-variant', JSON.stringify(activeVariant));
+      } catch (e) {
+        console.warn('Cannot persist active variant', e);
+      }
+    }
+  }, [activeVariant]);
+
   return (
     <div className="space-y-6">
       {/* Top Banner & Project Selector */}
@@ -184,7 +209,7 @@ export const TeamConstructor: React.FC = () => {
                 value={selectedProjectId}
                 onChange={(e) => {
                   setSelectedProjectId(e.target.value);
-                  executeMatch(e.target.value, weightK, weightA, weightL, weightT, weightC);
+                  executeMatch(e.target.value, selectedPreset);
                 }}
                 className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
               >
@@ -196,6 +221,27 @@ export const TeamConstructor: React.FC = () => {
               </select>
             </div>
           )}
+
+          {/* 2.1 — Селектор режима стратегии */}
+          <div className="flex items-center gap-2 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs">
+            <Sparkles className="w-4 h-4 text-brand-sky" />
+            <select
+              value={selectedPreset}
+              onChange={(e) => setSelectedPreset(e.target.value)}
+              title={presets.find(p => p.key === selectedPreset)?.description}
+              className="bg-transparent text-white font-medium focus:outline-none cursor-pointer max-w-[220px]"
+            >
+              {presets.length === 0 && <option value="BALANCED">Сбалансированный</option>}
+              {presets.map((p) => (
+                <option key={p.key} value={p.key} className="bg-slate-900 text-white">
+                  {p.name}
+                </option>
+              ))}
+              <option value="CUSTOM" className="bg-slate-900 text-white">
+                Ручные веса (слайдеры)
+              </option>
+            </select>
+          </div>
 
           <button
             onClick={handleRunMatch}
@@ -341,15 +387,36 @@ export const TeamConstructor: React.FC = () => {
                     {v.overall_score}
                   </span>
                 </div>
+
                 <div className="text-[11px] text-slate-400 mt-2 line-clamp-2">
                   Покрытие: {v.skills_coverage}%, Нагрузка: {v.avg_load || 75}%
                 </div>
+
+                {/* 2.2 — Resilience & Bus Factor */}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <ResilienceBadge score={v.resilience_score} />
+                  <BusFactorBadge
+                    busFactor={v.bus_factor}
+                    criticalSkills={v.risk_details?.critical_skills_at_risk}
+                  />
+                </div>
+
                 <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-800/60 text-[10px]">
                   <span className="text-slate-400">Участников: {v.members.length}</span>
-                  <span className={`font-semibold ${v.risk_level === 'LOW' ? 'text-emerald-400' : v.risk_level === 'MEDIUM' ? 'text-amber-400' : 'text-rose-400'}`}>
+                  <span className={`font-semibold ${
+                    v.risk_level === 'LOW' ? 'text-emerald-400'
+                    : v.risk_level === 'MEDIUM' ? 'text-amber-400'
+                    : v.risk_level === 'CRITICAL' ? 'text-rose-500'
+                    : 'text-rose-400'
+                  }`}>
                     Риск: {v.risk_level}
                   </span>
                 </div>
+
+                {/* 2.2 — График сходимости только для варианта №1 */}
+                {v.variant_id === variants[0]?.variant_id && v.convergence_history && (
+                  <ConvergenceSparkline data={v.convergence_history} />
+                )}
               </button>
             ))}
           </div>
@@ -415,6 +482,25 @@ export const TeamConstructor: React.FC = () => {
                   );
                 })}
               </div>
+
+              {/* 2.2 — Критические навыки с единственным носителем (SPOF) */}
+              {activeVariant.risk_details?.critical_skills_at_risk?.length > 0 && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl space-y-1.5">
+                  <div className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    Риски единственной точки отказа (SPOF)
+                  </div>
+                  {activeVariant.risk_details.critical_skills_at_risk.map((s, i) => (
+                    <div key={i} className="text-[11px] text-slate-300 flex items-center justify-between">
+                      <span>
+                        <strong className="text-white">{s.skill}</strong>
+                        {s.sole_carrier && <> — единственный носитель: <span className="text-rose-300">{s.sole_carrier}</span></>}
+                      </span>
+                      <span className="text-[10px] font-mono text-rose-300">BF={s.bus_factor}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Explanation & What-If Box */}
               <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl flex items-start gap-3 mt-4">
@@ -522,6 +608,30 @@ export const TeamConstructor: React.FC = () => {
                   {whatIfResult.risk_assessment}
                 </div>
 
+                {/* 2.3 — Монте-Карло стресс-тест */}
+                {whatIfResult.monte_carlo_stress_test && (
+                  <div className="mt-2 pt-2 border-t border-blue-900/40 space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-300">
+                      <span className="font-semibold text-white">Вероятность сдачи в срок (Монте-Карло):</span>
+                      <span className="font-mono font-extrabold text-emerald-300">
+                        {whatIfResult.monte_carlo_stress_test.success_probability}%
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-300">
+                      <span>Стресс-профиль надежности:</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        whatIfResult.monte_carlo_stress_test.risk_profile === 'STABLE'
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                          : whatIfResult.monte_carlo_stress_test.risk_profile === 'MODERATE_RISK'
+                          ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                          : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                      }`}>
+                        {whatIfResult.monte_carlo_stress_test.risk_profile}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="pt-2 flex justify-end gap-2">
                   <button
                     onClick={() => setIsWhatIfOpen(false)}
@@ -542,6 +652,80 @@ export const TeamConstructor: React.FC = () => {
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ── 2.2 — Вспомогательные визуализации ──
+
+const ResilienceBadge: React.FC<{ score?: number }> = ({ score }) => {
+  if (score == null) return null;
+  const color =
+    score > 80 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+    : score >= 60 ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+    : 'bg-rose-500/15 text-rose-400 border-rose-500/30';
+  return (
+    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${color}`}>
+      <Shield className="w-3 h-3" />
+      Resilience {Math.round(score)}%
+    </span>
+  );
+};
+
+const BusFactorBadge: React.FC<{
+  busFactor?: number;
+  criticalSkills?: Array<{ skill: string; sole_carrier?: string }>;
+}> = ({ busFactor, criticalSkills = [] }) => {
+  if (busFactor == null) return null;
+  const isCritical = busFactor <= 1;
+  return (
+    <span
+      title={
+        isCritical && criticalSkills.length > 0
+          ? `SPOF: ${criticalSkills
+              .map(s => `${s.skill}${s.sole_carrier ? ` (только ${s.sole_carrier})` : ''}`)
+              .join(', ')}`
+          : `Bus Factor = ${busFactor}`
+      }
+      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+        isCritical
+          ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+          : 'bg-slate-700/40 text-slate-300 border-slate-600/50'
+      }`}
+    >
+      <Activity className="w-3 h-3" />
+      Bus Factor {busFactor}{isCritical ? ' · SPOF' : ''}
+    </span>
+  );
+};
+
+const ConvergenceSparkline: React.FC<{
+  data?: Array<{ generation: number; best_fitness: number }>;
+}> = ({ data }) => {
+  if (!data || data.length < 2) return null;
+  const w = 180, h = 36, pad = 2;
+  const xs = data.map(d => d.generation);
+  const ys = data.map(d => d.best_fitness);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const sx = (x: number) => pad + ((x - minX) / Math.max(1, maxX - minX)) * (w - 2 * pad);
+  const sy = (y: number) => h - pad - ((y - minY) / Math.max(1, maxY - minY)) * (h - 2 * pad);
+  const points = data.map(d => `${sx(d.generation)},${sy(d.best_fitness)}`).join(' ');
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <span className="text-[10px] text-slate-500">Сходимость:</span>
+      <svg width={w} height={h} className="overflow-visible">
+        <polyline points={points} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
+        <circle
+          cx={sx(data[data.length - 1].generation)}
+          cy={sy(data[data.length - 1].best_fitness)}
+          r="2.5"
+          fill="#38bdf8"
+        />
+      </svg>
+      <span className="text-[10px] text-slate-400 font-mono">
+        gen {data[data.length - 1].generation} · {data[data.length - 1].best_fitness.toFixed(2)}
+      </span>
     </div>
   );
 };

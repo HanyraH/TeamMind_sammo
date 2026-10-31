@@ -172,14 +172,16 @@ class RunTeamMatchingView(APIView):
         candidates = [_build_candidate_dict(emp) for emp in emp_qs]
         role_reqs = _get_project_role_requirements(project)
 
-        # Вызов движка
-        engine = TeamMatchingEngine(weights=weights)
+        # Вызов движка с поддержкой пресетов
+        user_preset = request.data.get('preset')
+        engine = TeamMatchingEngine(weights=weights if user_weights else None, preset=user_preset)
         variants = engine.generate_all_variants(candidates, role_reqs, count=count)
 
         return Response({
             "project_id": str(project.id),
             "project_code": project.code,
             "project_name": project.name,
+            "preset_used": getattr(engine, 'current_preset', 'CUSTOM'),
             "weights_used": engine.weights,
             "candidates_considered": len(candidates),
             "roles_count": len(role_reqs),
@@ -265,3 +267,43 @@ class WhatIfSimulationView(APIView):
         )
 
         return Response(result)
+
+
+class TeamRiskAssessmentView(APIView):
+    """
+    Комплексная оценка рисков, Bus Factor и устойчивости команды (ТЗ §6.8).
+    Принимает текущий состав команды и требования к ролям проекта.
+    Возвращает Resilience Score, Single Point of Failure (SPOF) и рекомендации.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        team = request.data.get('team', [])
+        role_requirements = request.data.get('role_requirements')
+        project_id = request.data.get('project_id')
+
+        if project_id and not role_requirements:
+            try:
+                project = Project.objects.filter(id=uuid.UUID(str(project_id)), is_deleted=False).first()
+            except Exception:
+                project = Project.objects.filter(code=str(project_id), is_deleted=False).first()
+            if project:
+                role_requirements = _get_project_role_requirements(project)
+
+        engine = TeamMatchingEngine()
+        risks = engine.analyze_team_risks(team=team, role_requirements=role_requirements)
+        return Response(risks)
+
+
+class AlgorithmPresetsView(APIView):
+    """
+    Получение списка доступных пресетов динамической калибровки весов (ТЗ §6.8).
+    Поддерживает пресеты: BALANCED, CRUNCH, MENTORSHIP, FAST_PACE, DISTRIBUTED_SYNC.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        presets = TeamMatchingEngine.list_presets()
+        return Response({"presets": presets})
+
+

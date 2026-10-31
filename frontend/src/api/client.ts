@@ -189,7 +189,6 @@ export interface AbsenceEvent {
   availability_percent: number;
 }
 
-
 export const getAbsences = async (): Promise<AbsenceEvent[]> => {
   const { data } = await api.get('/absences/calendar/');
   return data;
@@ -231,7 +230,11 @@ export interface AlgoVariant {
   skills_coverage: number;
   avg_availability: number;
   avg_load: number;
-  risk_level: 'LOW' | 'MEDIUM' | 'HIGH';
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  resilience_score: number;
+  bus_factor: number;
+  risk_details: RiskDetails;
+  convergence_history?: Array<{ generation: number; best_fitness: number; avg_fitness: number }>;
   members: AlgoMember[];
   explanation?: string;
 }
@@ -298,6 +301,123 @@ export const getDashboardKpi = async (): Promise<DashboardKpiData> => {
   return data;
 };
 
-const saveBlobResponse = (blob: Blob, filename: string) => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); };
-export const downloadAnalyticsReport = async () => { const response = await api.get('/analytics/export/', { responseType: 'blob' }); saveBlobResponse(response.data, 'teammind_analytics_report.xlsx'); };
-export const downloadEmployeeExport = async () => { const response = await api.get('/org/employees/import-export/', { responseType: 'blob' }); const type = response.headers['content-type'] || ''; if (type.includes('application/json')) { const text = await response.data.text(); const parsed = JSON.parse(text); const rows = parsed.data || []; const headers = rows.length ? Object.keys(rows[0]) : ['Табельный номер','ФИО','Отдел','Должность','Грейд','Загрузка (%)','Хронотип','Формат','Статус']; const csv = [headers, ...rows.map((row: Record<string, unknown>) => headers.map(h => row[h] ?? ''))].map(row => row.map((v: unknown) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n'); saveBlobResponse(new Blob(['\ufeff', csv], {type:'text/csv;charset=utf-8'}), 'teammind_employees.csv'); return; } saveBlobResponse(response.data, 'teammind_employees.csv'); };
+const saveBlobResponse = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+const buildAnalyticsCsv = (data?: DashboardKpiData | null): string => {
+  const rows: (string | number)[][] = [];
+  rows.push(['Отчёт TeamMind', 'Сформирован', new Date().toLocaleString('ru-RU')]);
+  rows.push(['Раздел', 'Показатель', 'Значение']);
+
+  data?.kpis?.forEach((k) => {
+    rows.push(['KPI', k.label, k.value]);
+  });
+
+  data?.department_loads?.forEach((d) => {
+    rows.push(['Загрузка отдела', d.department, `${d.load}% (${d.count} чел.)`]);
+  });
+
+  const dist = data?.workload_distribution;
+  if (dist) {
+    rows.push(['Баланс нагрузки', 'Оптимальная (50–85%)', dist.optimal]);
+    rows.push(['Баланс нагрузки', 'Перегрузка (>85%)', dist.overloaded]);
+    rows.push(['Баланс нагрузки', 'Недогрузка (<50%)', dist.underloaded]);
+    rows.push(['Баланс нагрузки', 'Всего сотрудников', dist.total]);
+  }
+
+  const ch = data?.chronotypes;
+  if (ch) {
+    rows.push(['Хронотипы', 'Жаворонки', ch.lark]);
+    rows.push(['Хронотипы', 'Совы', ch.owl]);
+    rows.push(['Хронотипы', 'Дневные', ch.intermediate]);
+    rows.push(['Хронотипы', 'Голуби', ch.pigeon]);
+  }
+
+  return rows
+    .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(';'))
+    .join('\r\n');
+};
+
+export const downloadAnalyticsReport = async (data?: DashboardKpiData | null) => {
+  try {
+    const response = await api.get('/analytics/export/', { responseType: 'blob' });
+    const type = (response.headers['content-type'] || '').toLowerCase();
+    if (!type.includes('json')) {
+      saveBlobResponse(response.data, 'teammind_analytics_report.xlsx');
+      return;
+    }
+    // Сервер вернул JSON (вероятно, ошибку с кодом 200) — идём в fallback
+    console.warn('Analytics export returned JSON instead of file, falling back to local CSV');
+  } catch (err) {
+    console.warn('Analytics export endpoint unavailable, generating local CSV:', err);
+  }
+
+  const csv = buildAnalyticsCsv(data);
+  saveBlobResponse(
+    new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' }),
+    'teammind_analytics_report.csv'
+  );
+};
+
+export const downloadEmployeeExport = async () => {
+  const response = await api.get('/org/employees/import-export/', { responseType: 'blob' });
+  const type = response.headers['content-type'] || '';
+  if (type.includes('application/json')) {
+    const text = await response.data.text();
+    const parsed = JSON.parse(text);
+    const rows = parsed.data || [];
+    const headers = rows.length
+      ? Object.keys(rows[0])
+      : ['Табельный номер', 'ФИО', 'Отдел', 'Должность', 'Грейд', 'Загрузка (%)', 'Хронотип', 'Формат', 'Статус'];
+    const csv = [headers, ...rows.map((row: Record<string, unknown>) => headers.map((h) => row[h] ?? ''))]
+      .map((row) => row.map((v: unknown) => `"${String(v).replace(/"/g, '""')}"`).join(';'))
+      .join('\r\n');
+    saveBlobResponse(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' }), 'teammind_employees.csv');
+    return;
+  }
+  saveBlobResponse(response.data, 'teammind_employees.csv');
+};
+
+export interface BelbinClusterData {
+  ACTION: number;
+  PEOPLE: number;
+  THOUGHT: number;
+}
+
+export interface RiskDetails {
+  resilience_score: number;
+  overall_risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  bus_factor: number;
+  critical_skills_at_risk: Array<{
+    skill: string;
+    bus_factor: number;
+    status: string;
+    sole_carrier?: string;
+    description: string;
+  }>;
+  belbin_balance?: {
+    balance_score: number;
+    clusters: BelbinClusterData;
+    conflicts: string[];
+    advice: string[];
+  };
+  recommendations: string[];
+}
+
+export const getAlgorithmPresets = async () => {
+  const { data } = await api.get('/algorithm/presets/');
+  return data.presets;
+};
+
+export const getTeamRisks = async (payload: { team: any[]; project_id?: string }) => {
+  const { data } = await api.post('/algorithm/risks/', payload);
+  return data;
+};
